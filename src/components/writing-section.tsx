@@ -144,7 +144,6 @@ export function WritingSection() {
   const [showCorrectedInEditor, setShowCorrectedInEditor] = useState(false);
   const [originalEssayText, setOriginalEssayText] = useState<string | null>(null);
   const [analysisSourceText, setAnalysisSourceText] = useState<string>('');
-  const [showAllSimpleErrors, setShowAllSimpleErrors] = useState(false);
   const [showAllGrammarErrors, setShowAllGrammarErrors] = useState(false);
   const editorRef = useRef<HTMLTextAreaElement | null>(null);
   const overlayRef = useRef<HTMLDivElement | null>(null);
@@ -459,7 +458,6 @@ export function WritingSection() {
     setShowCorrectedInEditor(false);
     setOriginalEssayText(null);
     setAnalysisSourceText(essayText);
-    setShowAllSimpleErrors(false);
     setShowAllGrammarErrors(false);
     
     try {
@@ -981,6 +979,17 @@ export function WritingSection() {
                   setEssayText('');
                   setWordCount(0);
                   setUploadedFile(null);
+                  // Analiz/feedback state'lerini de sıfırla (Clear analizden sonra da çalışsın)
+                  setIsAnalyzing(false);
+                  setFeedback(null);
+                  setShowFeedback(false);
+                  setGeminiResult(null);
+                  setShowGeminiResult(false);
+                  setShowAllGrammarErrors(false);
+                  setShowCorrectedInEditor(false);
+                  setOriginalEssayText(null);
+                  setAnalysisSourceText('');
+                  setIsExtractingText(false);
                 }}
                 className="px-6 py-3 bg-gray-200 hover:bg-gray-300 text-gray-700 rounded-xl font-semibold transition-all"
               >
@@ -990,107 +999,7 @@ export function WritingSection() {
 
           </motion.div>
 
-          {/* Tips/Includes kutuları sol kolonun içinde (sağ sidebar uzayınca boşluk kalmasın) */}
-          <div className="grid gap-6 md:grid-cols-2">
-            <motion.div
-              initial={{ opacity: 0, y: 20 }}
-              animate={{ opacity: 1, y: 0 }}
-              className="bg-gradient-to-br from-yellow-50 to-orange-50 rounded-2xl p-6 border-2 border-yellow-200 shadow-lg"
-            >
-              <div className="flex items-center gap-2 mb-4">
-                <Lightbulb className="w-5 h-5 text-yellow-600" />
-                <h3 className="text-lg font-bold text-gray-900">AI-Powered Writing Tips</h3>
-              </div>
-              {loadingTips ? (
-                <div className="text-center py-4 text-gray-500 text-sm">Loading personalized tips...</div>
-              ) : (
-                <ul className="space-y-2 text-sm text-gray-700">
-                  {writingTips.map((tip, index) => (
-                    <li key={index} className="flex items-start gap-2">
-                      <CheckCircle className="w-4 h-4 text-yellow-600 mt-0.5 flex-shrink-0" />
-                      <span>{tip}</span>
-                    </li>
-                  ))}
-                </ul>
-              )}
-            </motion.div>
-
-            <motion.div
-              initial={{ opacity: 0, y: 20 }}
-              animate={{ opacity: 1, y: 0 }}
-              className="bg-gradient-to-br from-indigo-50 to-purple-50 rounded-2xl p-6 border-2 border-indigo-200 shadow-lg"
-            >
-              <h3 className="text-lg font-bold text-gray-900 mb-4">AI Feedback Includes</h3>
-              <div className="space-y-3">
-                <div className="flex items-start gap-3">
-                  <div className="p-2 bg-indigo-200 rounded-lg">
-                    <CheckCircle className="w-4 h-4 text-indigo-700" />
-                  </div>
-                  <div>
-                    <div className="font-semibold text-sm text-gray-900">Grammar Check</div>
-                    <div className="text-xs text-gray-600">Detailed error analysis</div>
-                  </div>
-                </div>
-                <div className="flex items-start gap-3">
-                  <div className="p-2 bg-purple-200 rounded-lg">
-                    <Star className="w-4 h-4 text-purple-700" />
-                  </div>
-                  <div>
-                    <div className="font-semibold text-sm text-gray-900">Vocabulary</div>
-                    <div className="text-xs text-gray-600">Word choice suggestions</div>
-                  </div>
-                </div>
-                <div className="flex items-start gap-3">
-                  <div className="p-2 bg-pink-200 rounded-lg">
-                    <Award className="w-4 h-4 text-pink-700" />
-                  </div>
-                  <div>
-                    <div className="font-semibold text-sm text-gray-900">Structure</div>
-                    <div className="text-xs text-gray-600">Organization tips</div>
-                  </div>
-                </div>
-              </div>
-
-              {/* Recent Essays moved here (back to previous desired layout) */}
-              <div className="mt-5 pt-4 border-t border-indigo-200/70">
-                <div className="flex items-center justify-between mb-3">
-                  <h4 className="text-sm font-bold text-gray-900">Recent Essays</h4>
-                  <span className="text-[11px] text-gray-500">Click to load</span>
-                </div>
-                <div className="space-y-2 max-h-40 overflow-y-auto scrollbar-visible pr-1">
-                  {recentEssays.length > 0 ? (
-                    recentEssays.map((essay) => (
-                      <div
-                        key={essay.id}
-                        onClick={() => handleLoadRecentEssay(essay.id)}
-                        className="p-2 bg-white/80 rounded-xl hover:bg-white transition-colors cursor-pointer border border-indigo-100"
-                      >
-                        <div className="flex items-center justify-between mb-1">
-                          <div className="font-semibold text-xs text-gray-900 truncate">{essay.title}</div>
-                          <div className="text-[10px] text-gray-500">{formatActivityDate(essay.date)}</div>
-                        </div>
-                        <div className="flex items-center justify-between text-[10px]">
-                          <div className="flex items-center gap-1 text-gray-600">
-                            <FileText className="w-3 h-3" />
-                            <span>{essay.words} words</span>
-                          </div>
-                          <div className="font-bold text-green-600">{essay.score}%</div>
-                        </div>
-                      </div>
-                    ))
-                  ) : (
-                    <div className="text-center py-2 text-gray-500 text-xs">
-                      No essays yet.
-                    </div>
-                  )}
-                </div>
-              </div>
-            </motion.div>
-          </div>
-        </div>
-
-        {/* Sidebar – AI Feedback + Recent Essays */}
-        <div className="space-y-6">
+          {/* AI Feedback kutusu sol kolona alındı (Tips/Includes ile yer değiştirdi) */}
           {showFeedback && feedback ? (
             <motion.div
               initial={{ opacity: 0, x: 20 }}
@@ -1106,54 +1015,6 @@ export function WritingSection() {
                 <div className="text-3xl font-bold text-indigo-600">{feedback.overallScore}%</div>
               </div>
 
-              {/* Simple error list (always show all red errors here) */}
-              {showGeminiResult && geminiResult && (
-                <div className="mb-4 bg-white/70 rounded-xl border border-red-200 p-3">
-                  <div className="flex items-center justify-between mb-2">
-                    <div className="font-semibold text-sm text-red-800">Hatalar</div>
-                    <div className="flex items-center gap-3">
-                      <span className="text-xs text-gray-500">
-                        Toplam: <span className="font-semibold text-gray-700">{geminiResult.errors.length}</span>
-                      </span>
-                      {geminiResult.errors.length > 5 && (
-                        <button
-                          type="button"
-                          onClick={() => setShowAllSimpleErrors((v) => !v)}
-                          className="text-xs font-semibold text-indigo-600 hover:text-indigo-700"
-                        >
-                          {showAllSimpleErrors ? 'Daha az göster' : 'Tümünü göster'}
-                        </button>
-                      )}
-                    </div>
-                  </div>
-                  {geminiResult.errors.length === 0 ? (
-                    <div className="text-xs text-gray-500">Hata bulunamadı.</div>
-                  ) : (
-                    <div
-                      className={`space-y-2 overflow-y-scroll scrollbar-visible pr-1 ${
-                        showAllSimpleErrors ? 'max-h-[45vh]' : 'max-h-[22vh]'
-                      }`}
-                    >
-                      {(showAllSimpleErrors ? geminiResult.errors : geminiResult.errors.slice(0, 5)).map((err, idx) => (
-                        <div key={idx} className="border border-red-100 rounded-lg p-2 bg-red-50/40">
-                          <div className="text-xs">
-                            <span className="font-semibold text-red-700">Hatalı:</span>{' '}
-                            <span className="text-red-700 font-medium">{err.original}</span>
-                          </div>
-                          <div className="text-xs">
-                            <span className="font-semibold text-green-700">Doğru:</span>{' '}
-                            <span className="text-green-700 font-medium">{err.replacement}</span>
-                          </div>
-                          <div className="text-[11px] text-gray-700">
-                            <span className="font-semibold">Açıklama:</span> {err.explanation}
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                </div>
-              )}
-
               {/* Grammar */}
               {feedback.grammar && (
                 <div className="mb-4">
@@ -1166,32 +1027,34 @@ export function WritingSection() {
                       <span className="text-xs text-gray-500">
                         Toplam hata: <span className="font-semibold text-gray-700">{feedback.grammar.errors.length}</span>
                       </span>
-                      {feedback.grammar.errors.length > 5 && (
+                      {feedback.grammar.errors.length > 2 && (
                         <button
                           type="button"
                           onClick={() => setShowAllGrammarErrors((v) => !v)}
                           className="text-xs font-semibold text-indigo-600 hover:text-indigo-700"
                         >
-                          {showAllGrammarErrors ? 'Daha az göster' : 'Tümünü göster'}
+                          {showAllGrammarErrors ? 'Daha az göster' : 'Daha fazla gör'}
                         </button>
                       )}
                     </div>
                   )}
                   {feedback.grammar.errors.length > 0 && (
                     <div
-                      className={`space-y-2 mt-2 overflow-y-scroll scrollbar-visible pr-1 ${
+                      className={`mt-2 overflow-y-scroll scrollbar-visible pr-1 ${
                         showAllGrammarErrors ? 'max-h-[70vh]' : 'max-h-[50vh]'
                       }`}
                     >
-                      {(showAllGrammarErrors ? feedback.grammar.errors : feedback.grammar.errors.slice(0, 5)).map((error, idx) => (
-                        <div key={idx} className="bg-red-50 border border-red-200 rounded-lg p-3">
-                          <div className="font-semibold text-red-700 text-sm">{error.type}</div>
-                          <div className="text-sm text-red-600">{error.message}</div>
-                          <div className="text-sm text-gray-700 mt-1">
-                            <strong>Suggestion:</strong> {error.suggestion}
+                      <div className="grid grid-cols-2 gap-3">
+                        {(showAllGrammarErrors ? feedback.grammar.errors : feedback.grammar.errors.slice(0, 2)).map((error, idx) => (
+                          <div key={idx} className="bg-red-50 border border-red-200 rounded-lg p-3">
+                            <div className="font-semibold text-red-700 text-sm">{error.type}</div>
+                            <div className="text-sm text-red-600">{error.message}</div>
+                            <div className="text-sm text-gray-700 mt-1">
+                              <strong>Suggestion:</strong> {error.suggestion}
+                            </div>
                           </div>
-                        </div>
-                      ))}
+                        ))}
+                      </div>
                     </div>
                   )}
                 </div>
@@ -1204,9 +1067,7 @@ export function WritingSection() {
                     <span className="font-semibold text-gray-700">Vocabulary</span>
                     <span className="font-bold text-gray-900">{feedback.vocabulary.score}%</span>
                   </div>
-                  <div className="text-sm text-gray-600 mb-2">
-                    {feedback.vocabulary.levelAnalysis}
-                  </div>
+                  <div className="text-sm text-gray-600 mb-2">{feedback.vocabulary.levelAnalysis}</div>
                   {feedback.vocabulary.suggestions.length > 0 && (
                     <div className="bg-blue-50 border border-blue-200 rounded-lg p-3">
                       <div className="font-semibold text-blue-700 text-sm mb-1">Suggestions:</div>
@@ -1285,8 +1146,102 @@ export function WritingSection() {
               </p>
             </motion.div>
           )}
+        </div>
 
-          {/* Recent Essays moved into AI Feedback Includes card */}
+        {/* Sidebar – Tips + Includes (AI Feedback ile yer değiştirdi) */}
+        <div className="space-y-6">
+          <motion.div
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            className="bg-gradient-to-br from-yellow-50 to-orange-50 rounded-2xl p-6 border-2 border-yellow-200 shadow-lg"
+          >
+            <div className="flex items-center gap-2 mb-4">
+              <Lightbulb className="w-5 h-5 text-yellow-600" />
+              <h3 className="text-lg font-bold text-gray-900">AI-Powered Writing Tips</h3>
+            </div>
+            {loadingTips ? (
+              <div className="text-center py-4 text-gray-500 text-sm">Loading personalized tips...</div>
+            ) : (
+              <ul className="space-y-2 text-sm text-gray-700">
+                {writingTips.map((tip, index) => (
+                  <li key={index} className="flex items-start gap-2">
+                    <CheckCircle className="w-4 h-4 text-yellow-600 mt-0.5 flex-shrink-0" />
+                    <span>{tip}</span>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </motion.div>
+
+          <motion.div
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            className="bg-gradient-to-br from-indigo-50 to-purple-50 rounded-2xl p-6 border-2 border-indigo-200 shadow-lg"
+          >
+            <h3 className="text-lg font-bold text-gray-900 mb-4">AI Feedback Includes</h3>
+            <div className="space-y-3">
+              <div className="flex items-start gap-3">
+                <div className="p-2 bg-indigo-200 rounded-lg">
+                  <CheckCircle className="w-4 h-4 text-indigo-700" />
+                </div>
+                <div>
+                  <div className="font-semibold text-sm text-gray-900">Grammar Check</div>
+                  <div className="text-xs text-gray-600">Detailed error analysis</div>
+                </div>
+              </div>
+              <div className="flex items-start gap-3">
+                <div className="p-2 bg-purple-200 rounded-lg">
+                  <Star className="w-4 h-4 text-purple-700" />
+                </div>
+                <div>
+                  <div className="font-semibold text-sm text-gray-900">Vocabulary</div>
+                  <div className="text-xs text-gray-600">Word choice suggestions</div>
+                </div>
+              </div>
+              <div className="flex items-start gap-3">
+                <div className="p-2 bg-pink-200 rounded-lg">
+                  <Award className="w-4 h-4 text-pink-700" />
+                </div>
+                <div>
+                  <div className="font-semibold text-sm text-gray-900">Structure</div>
+                  <div className="text-xs text-gray-600">Organization tips</div>
+                </div>
+              </div>
+            </div>
+
+            {/* Recent Essays moved here (back to previous desired layout) */}
+            <div className="mt-5 pt-4 border-t border-indigo-200/70">
+              <div className="flex items-center justify-between mb-3">
+                <h4 className="text-sm font-bold text-gray-900">Recent Essays</h4>
+                <span className="text-[11px] text-gray-500">Click to load</span>
+              </div>
+              <div className="space-y-2 max-h-40 overflow-y-auto scrollbar-visible pr-1">
+                {recentEssays.length > 0 ? (
+                  recentEssays.map((essay) => (
+                    <div
+                      key={essay.id}
+                      onClick={() => handleLoadRecentEssay(essay.id)}
+                      className="p-2 bg-white/80 rounded-xl hover:bg-white transition-colors cursor-pointer border border-indigo-100"
+                    >
+                      <div className="flex items-center justify-between mb-1">
+                        <div className="font-semibold text-xs text-gray-900 truncate">{essay.title}</div>
+                        <div className="text-[10px] text-gray-500">{formatActivityDate(essay.date)}</div>
+                      </div>
+                      <div className="flex items-center justify-between text-[10px]">
+                        <div className="flex items-center gap-1 text-gray-600">
+                          <FileText className="w-3 h-3" />
+                          <span>{essay.words} words</span>
+                        </div>
+                        <div className="font-bold text-green-600">{essay.score}%</div>
+                      </div>
+                    </div>
+                  ))
+                ) : (
+                  <div className="text-center py-2 text-gray-500 text-xs">No essays yet.</div>
+                )}
+              </div>
+            </div>
+          </motion.div>
         </div>
       </div>
 
