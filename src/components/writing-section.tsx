@@ -23,6 +23,10 @@ import { saveActivity, getWritingStats, getActivitiesByType, getUserStats, getAc
 import { getCurrentUser } from '../lib/auth';
 import { toast } from 'sonner';
 
+interface WritingSectionProps {
+  initialActivityId?: string | null;
+}
+
 const writingPrompts = [
   {
     id: 1,
@@ -113,7 +117,7 @@ const formatActivityDate = (dateString: string): string => {
   }
 };
 
-export function WritingSection() {
+export function WritingSection({ initialActivityId }: WritingSectionProps) {
   const [selectedPrompt, setSelectedPrompt] = useState<number | null>(null);
   const [essayText, setEssayText] = useState('');
   const [wordCount, setWordCount] = useState(0);
@@ -176,6 +180,54 @@ export function WritingSection() {
       window.removeEventListener('storage', updateStats);
     };
   }, []);
+
+  // Yardımcı: alt kategorilerden genel writing skorunu hesapla
+  const getWritingOverallScore = (fb: AIFeedback): number => {
+    const scores: number[] = [];
+    if (fb.grammar?.score != null) scores.push(fb.grammar.score);
+    if (fb.vocabulary?.score != null) scores.push(fb.vocabulary.score);
+    if (fb.coherence?.score != null) scores.push(fb.coherence.score);
+    if (!scores.length) return fb.overallScore;
+    return Math.round(scores.reduce((sum, s) => sum + s, 0) / scores.length);
+  };
+
+  // Dashboard'dan belirli bir writing kaydıyla gelindiyse, o kaydı yükle
+  useEffect(() => {
+    if (!initialActivityId) return;
+
+    const writingActivities = getActivitiesByType('writing');
+    const activity = writingActivities.find((a) => a.id === initialActivityId);
+    if (!activity) return;
+
+    const text = (activity as any).essayText || '';
+    const savedSimple = (activity as any).writingSimpleAnalysis || null;
+    const savedFeedback = (activity as any).writingDetailedFeedback || null;
+
+    if (!text) return;
+
+    setSelectedPrompt(null);
+
+    if (savedFeedback) {
+      setFeedback(savedFeedback);
+      setShowFeedback(true);
+    } else {
+      setFeedback(null);
+      setShowFeedback(false);
+    }
+
+    if (savedSimple) {
+      setGeminiResult(savedSimple);
+      setShowGeminiResult(true);
+    } else {
+      setGeminiResult(null);
+      setShowGeminiResult(false);
+    }
+
+    setShowCorrectedInEditor(false);
+    setOriginalEssayText(null);
+    setAnalysisSourceText(text);
+    handleTextChange(text);
+  }, [initialActivityId]);
 
   useEffect(() => {
     const loadTips = async () => {
@@ -492,7 +544,13 @@ export function WritingSection() {
         overallScore: simpleGemini.score,
       };
 
-      setFeedback(aiFeedback);
+      const computedOverall = getWritingOverallScore(aiFeedback);
+      const normalizedFeedback: AIFeedback = {
+        ...aiFeedback,
+        overallScore: computedOverall,
+      };
+
+      setFeedback(normalizedFeedback);
       setGeminiResult(simpleGemini);
       setShowFeedback(true);
       setShowGeminiResult(true);
@@ -501,13 +559,13 @@ export function WritingSection() {
       const selectedPromptData = writingPrompts.find(p => p.id === selectedPrompt);
       saveActivity({
         type: 'writing',
-        score: aiFeedback.overallScore,
+        score: computedOverall,
         courseTitle: selectedPromptData?.title || 'Writing Practice',
         wordCount: wordCount,
         essayText: essayText,
         correctedText: simpleGemini.corrected_text,
         writingSimpleAnalysis: simpleGemini,
-        writingDetailedFeedback: aiFeedback,
+        writingDetailedFeedback: normalizedFeedback,
       });
 
       // After successful submit, update topic suggestions dynamically
@@ -542,7 +600,7 @@ export function WritingSection() {
         });
       }
       
-      toast.success(`Analysis complete! Score: ${aiFeedback.overallScore}%`);
+      toast.success(`Analysis complete! Score: ${computedOverall}%`);
     } catch (error) {
       console.error('Error analyzing writing:', error);
       const errorMessage = error instanceof Error ? error.message : 'Unknown error occurred';
@@ -1012,7 +1070,9 @@ export function WritingSection() {
                   <Sparkles className="w-5 h-5 text-indigo-600" />
                   AI Feedback
                 </h3>
-                <div className="text-3xl font-bold text-indigo-600">{feedback.overallScore}%</div>
+                <div className="text-3xl font-bold text-indigo-600">
+                  {getWritingOverallScore(feedback)}%
+                </div>
               </div>
 
               {/* Grammar */}

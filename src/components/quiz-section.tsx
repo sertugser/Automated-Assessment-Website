@@ -145,9 +145,11 @@ interface QuizSectionProps {
   onCourseSelect?: (courseId: string) => void;
   cefrLevel?: CEFRLevel | null;
   onViewAllQuizzes?: () => void;
+  initialQuizActivityId?: string | null;
+  onQuizClick?: (quizId: string) => void;
 }
 
-export function QuizSection({ onCourseSelect, cefrLevel = null, onViewAllQuizzes }: QuizSectionProps) {
+export function QuizSection({ onCourseSelect, cefrLevel = null, onViewAllQuizzes, initialQuizActivityId, onQuizClick }: QuizSectionProps) {
   const { t } = useLanguage();
   const [selectedCategory, setSelectedCategory] = useState<number | null>(null);
   const [quizStats, setQuizStats] = useState(getQuizStats());
@@ -225,6 +227,13 @@ export function QuizSection({ onCourseSelect, cefrLevel = null, onViewAllQuizzes
       window.removeEventListener('storage', updateStats);
     };
   }, []);
+
+  // Eğer dashboard'dan belirli bir quiz aktivitesi seçildiyse, Quiz History ekranına yönlendir
+  useEffect(() => {
+    if (!initialQuizActivityId || !onViewAllQuizzes) return;
+    // Şu an için sadece Quiz History ekranına geçiyoruz; kartlar orada zaten tüm detayları gösteriyor
+    onViewAllQuizzes();
+  }, [initialQuizActivityId, onViewAllQuizzes]);
 
   useEffect(() => {
     const loadTips = async () => {
@@ -565,9 +574,17 @@ export function QuizSection({ onCourseSelect, cefrLevel = null, onViewAllQuizzes
                   const colorClass = colors[index % colors.length];
                   
                   return (
-                    <div
+                    <button
                       key={quiz.id}
-                      className={`p-3 ${colorClass} rounded-xl transition-all cursor-pointer border hover:shadow-md`}
+                      type="button"
+                      onClick={() => {
+                        if (onQuizClick) {
+                          onQuizClick(quiz.id);
+                        } else if (onViewAllQuizzes) {
+                          onViewAllQuizzes();
+                        }
+                      }}
+                      className={`w-full text-left p-3 ${colorClass} rounded-xl transition-all cursor-pointer border hover:shadow-md`}
                     >
                       <div className="flex items-center justify-between mb-2">
                         <div className="font-semibold text-sm text-gray-900 truncate pr-2">{quiz.title}</div>
@@ -586,7 +603,7 @@ export function QuizSection({ onCourseSelect, cefrLevel = null, onViewAllQuizzes
                         </div>
                         <span className="text-gray-600">{formatActivityDate(quiz.date)}</span>
                       </div>
-                    </div>
+                    </button>
                   );
                 })
               ) : (

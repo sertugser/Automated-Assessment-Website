@@ -19,6 +19,22 @@ export interface UserActivity {
   // Optional saved analysis payloads (so Recent Essays can restore results without re-analyzing)
   writingSimpleAnalysis?: any;
   writingDetailedFeedback?: any;
+  // Optional saved data for speaking activities
+  speakingTranscript?: string;
+  speakingFeedback?: any;
+  // Optional saved data for quiz activities
+  quizQuestions?: Array<{
+    id: number;
+    question: string;
+    options: string[];
+    correctAnswer: number;
+    explanation: string;
+    topic: string;
+    section?: 1 | 2 | 3;
+  }>;
+  quizUserAnswers?: (number | null)[]; // User's selected answers (index of option)
+  quizReadingPassage?: string; // For reading comprehension quizzes
+  quizFeedback?: any; // AI-generated feedback for the quiz
 }
 
 export interface UserStats {
@@ -435,6 +451,59 @@ export const getMonthlyData = () => {
 };
 
 /**
+ * Get daily progress data (starting from 2 days ago, showing all days including empty ones)
+ */
+export const getDailyProgressData = () => {
+  const activities = getActivities();
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  
+  // Start from 2 days ago
+  const startDate = new Date(today);
+  startDate.setDate(startDate.getDate() - 2);
+  startDate.setHours(0, 0, 0, 0);
+  
+  // Generate all days from start date to today (including empty days)
+  const dailyData = [];
+  const currentDate = new Date(startDate);
+  
+  while (currentDate <= today) {
+    const date = new Date(currentDate);
+    date.setHours(0, 0, 0, 0);
+    
+    const dayActivities = activities.filter(a => {
+      const activityDate = new Date(a.date);
+      activityDate.setHours(0, 0, 0, 0);
+      return activityDate.getTime() === date.getTime();
+    });
+    
+    // Lessons completed count
+    const lessonsCompleted = dayActivities.length;
+    
+    // Average score for the day
+    const averageScore = dayActivities.length > 0
+      ? Math.round(dayActivities.reduce((sum, a) => sum + a.score, 0) / dayActivities.length)
+      : 0;
+    
+    // Format date label (day number)
+    const dayLabel = date.getDate();
+    const monthLabel = date.toLocaleDateString('en-US', { month: 'short' });
+    
+    dailyData.push({
+      day: `${monthLabel} ${dayLabel}`,
+      date: date.toISOString().split('T')[0],
+      lessonsCompleted,
+      averageScore,
+    });
+    
+    // Move to next day
+    currentDate.setDate(currentDate.getDate() + 1);
+  }
+  
+  return dailyData;
+};
+
+/**
  * Get skills breakdown from activities
  * Each skill is calculated ONLY from activities specific to that skill
  * If no activities exist for a skill, it shows 0%
@@ -510,10 +579,21 @@ export const getActivityTypeDistribution = () => {
       { name: 'Quiz', value: 0, color: '#3b82f6' },
       { name: 'Writing', value: 0, color: '#6366f1' },
       { name: 'Speaking', value: 0, color: '#ec4899' },
+      { name: 'Listening', value: 0, color: '#f59e0b' },
     ];
   }
   
-  const quizCount = activities.filter(a => a.type === 'quiz').length;
+  const quizActivities = activities.filter(a => a.type === 'quiz');
+  
+  // Separate listening quizzes from other quizzes
+  const listeningQuizzes = quizActivities.filter(a => {
+    const courseId = (a.courseId || '').toLowerCase();
+    const courseTitle = (a.courseTitle || '').toLowerCase();
+    return courseId.includes('listening') || courseTitle.includes('listening');
+  });
+  
+  const quizCount = quizActivities.length - listeningQuizzes.length; // Other quizzes (excluding listening)
+  const listeningCount = listeningQuizzes.length;
   const writingCount = activities.filter(a => a.type === 'writing').length;
   const speakingCount = activities.filter(a => a.type === 'speaking').length;
   
@@ -534,6 +614,11 @@ export const getActivityTypeDistribution = () => {
       name: 'Speaking', 
       value: total > 0 ? Math.round((speakingCount / total) * 100) : 0, 
       color: '#ec4899' 
+    },
+    { 
+      name: 'Listening', 
+      value: total > 0 ? Math.round((listeningCount / total) * 100) : 0, 
+      color: '#f59e0b' 
     },
   ];
 };

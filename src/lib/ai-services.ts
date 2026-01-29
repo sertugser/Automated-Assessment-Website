@@ -20,6 +20,7 @@ if (import.meta.env.DEV) {
 
 // API Endpoints
 const GROQ_ENDPOINT = 'https://api.groq.com/openai/v1/chat/completions';
+const GROQ_AUDIO_ENDPOINT = 'https://api.groq.com/openai/v1/audio/transcriptions';
 // Use a Gemini model that has quota in your project (2.5-flash has free tier as of 2026)
 const GEMINI_MODEL = 'gemini-2.5-flash';
 const GEMINI_ENDPOINT = `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent`;
@@ -438,8 +439,11 @@ export const analyzeWritingWithGroq = async (text: string): Promise<SimpleWritin
 
 /**
  * Analyze speaking assignment
+ * Returns both detailed AI feedback and the transcribed text
  */
-export const analyzeSpeaking = async (audioBlob: Blob): Promise<AIFeedback> => {
+export const analyzeSpeaking = async (
+  audioBlob: Blob
+): Promise<{ feedback: AIFeedback; transcript: string }> => {
   if (!GEMINI_API_KEY) {
     throw new Error('Gemini API key is required for speaking analysis (audio transcription)');
   }
@@ -466,7 +470,7 @@ export const analyzeSpeaking = async (audioBlob: Blob): Promise<AIFeedback> => {
     const estimatedDuration = Math.max(10, wordCount / 2); // Rough estimate: 2 words per second
     const wordsPerMinute = Math.round((wordCount / estimatedDuration) * 60);
 
-    return {
+    const normalizedFeedback: AIFeedback = {
       overallScore: Math.min(100, Math.max(0, feedback.overallScore || 75)),
       pronunciation: feedback.pronunciation || {
         score: 80,
@@ -489,6 +493,11 @@ export const analyzeSpeaking = async (audioBlob: Blob): Promise<AIFeedback> => {
       strengths: feedback.strengths || [],
       improvements: feedback.improvements || [],
     };
+
+    return {
+      feedback: normalizedFeedback,
+      transcript,
+    };
   } catch (error) {
     console.error('Error analyzing speaking:', error);
     throw new Error(`Failed to analyze speaking: ${error instanceof Error ? error.message : 'Unknown error'}`);
@@ -496,9 +505,66 @@ export const analyzeSpeaking = async (audioBlob: Blob): Promise<AIFeedback> => {
 };
 
 /**
+ * Transcribe audio using Groq Whisper
+ */
+const transcribeAudioWithGroq = async (audioBlob: Blob): Promise<string> => {
+  if (!GROQ_API_KEY) {
+    throw new Error('Groq API key is required for audio transcription');
+  }
+
+  const formData = new FormData();
+  // Browser Blob supports name as third arg
+  formData.append('file', audioBlob, 'speech.webm');
+  formData.append('model', 'whisper-large-v3');
+  formData.append('response_format', 'json');
+
+  const response = await fetch(GROQ_AUDIO_ENDPOINT, {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${GROQ_API_KEY}`,
+    },
+    body: formData,
+  });
+
+  if (!response.ok) {
+    const errorText = await response.text();
+    let errorData: any;
+    try {
+      errorData = JSON.parse(errorText);
+    } catch {
+      errorData = { error: { message: errorText } };
+    }
+
+    // Basic rate-limit detection
+    if (
+      errorData.error?.code === 'rate_limit_exceeded' ||
+      errorText.includes('rate limit') ||
+      errorText.includes('Rate limit')
+    ) {
+      const err = new Error(
+        `Groq audio transcription rate limit: ${errorData.error?.message || errorText}`
+      );
+      (err as any).isRateLimit = true;
+      throw err;
+    }
+
+    throw new Error(`Groq audio transcription error: ${errorText}`);
+  }
+
+  const data = await response.json();
+  const transcript = (data.text || '').trim();
+
+  if (!transcript || transcript.length < 5) {
+    throw new Error('Groq audio transcription returned empty or too short result');
+  }
+
+  return transcript;
+};
+
+/**
  * Transcribe audio using Gemini's audio transcription
  */
-const transcribeAudio = async (audioBlob: Blob): Promise<string> => {
+const transcribeAudioWithGemini = async (audioBlob: Blob): Promise<string> => {
   if (!GEMINI_API_KEY) {
     throw new Error('Gemini API key is required for audio transcription');
   }
@@ -509,50 +575,102 @@ const transcribeAudio = async (audioBlob: Blob): Promise<string> => {
   // Determine MIME type
   const mimeType = audioBlob.type || 'audio/webm';
 
-  try {
-    const response = await fetch(`${GEMINI_AUDIO_ENDPOINT}?key=${GEMINI_API_KEY}`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        contents: [{
-          parts: [
-            {
-              inlineData: {
-                mimeType: mimeType,
-                data: base64Audio
-              }
+  const response = await fetch(`${GEMINI_AUDIO_ENDPOINT}?key=${GEMINI_API_KEY}`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      contents: [{
+        parts: [
+          {
+            inlineData: {
+              mimeType,
+              data: base64Audio,
             },
-            {
-              text: 'Transcribe this audio to text. Return only the transcribed text without any additional commentary.'
-            }
-          ]
-        }],
-        generationConfig: {
-          temperature: 0.1,
-          maxOutputTokens: 1000,
-        },
-      }),
-    });
+          },
+          {
+            text: 'Transcribe this audio to text. Return only the transcribed text without any additional commentary.',
+          },
+        ],
+      }],
+      generationConfig: {
+        temperature: 0.1,
+        maxOutputTokens: 1000,
+      },
+    }),
+  });
 
-    if (!response.ok) {
-      const error = await response.text();
-      throw new Error(`Gemini audio transcription error: ${error}`);
+  if (!response.ok) {
+    const error = await response.text();
+    let errorData: any;
+    try {
+      errorData = JSON.parse(error);
+    } catch {
+      errorData = { error: { message: error } };
     }
 
-    const data = await response.json();
-    const transcript = data.candidates[0]?.content?.parts[0]?.text || '';
-    
-    if (!transcript || transcript.trim().length < 5) {
-      throw new Error('Audio transcription returned empty or too short result');
+    if (
+      errorData.error?.code === 429 ||
+      errorData.error?.status === 'RESOURCE_EXHAUSTED' ||
+      error.includes('quota') ||
+      error.includes('rate limit') ||
+      error.includes('Rate limit')
+    ) {
+      const friendly = new Error(
+        `Gemini audio transcription quota/rate limit exceeded: ${errorData.error?.message || error}`
+      );
+      (friendly as any).isRateLimit = true;
+      throw friendly;
     }
-    
-    return transcript.trim();
-  } catch (error) {
-    console.error('Error transcribing audio:', error);
-    throw new Error(`Failed to transcribe audio: ${error}`);
+
+    throw new Error(`Gemini audio transcription error: ${error}`);
   }
+
+  const data = await response.json();
+  const transcript = data.candidates?.[0]?.content?.parts?.[0]?.text || '';
+
+  if (!transcript || transcript.trim().length < 5) {
+    throw new Error('Audio transcription returned empty or too short result');
+  }
+
+  return transcript.trim();
+};
+
+/**
+ * Transcribe audio with backup strategy:
+ * Groq Whisper (primary) -> Gemini (backup)
+ */
+const transcribeAudio = async (audioBlob: Blob): Promise<string> => {
+  const errors: string[] = [];
+
+  // Try Groq Whisper first
+  if (GROQ_API_KEY) {
+    try {
+      return await transcribeAudioWithGroq(audioBlob);
+    } catch (error: any) {
+      const msg = error instanceof Error ? error.message : String(error);
+      errors.push(`Groq: ${msg}`);
+      console.warn('Groq audio transcription failed, falling back to Gemini (if configured)...', error);
+    }
+  }
+
+  // Fallback to Gemini
+  if (GEMINI_API_KEY) {
+    try {
+      return await transcribeAudioWithGemini(audioBlob);
+    } catch (error: any) {
+      const msg = error instanceof Error ? error.message : String(error);
+      errors.push(`Gemini: ${msg}`);
+      console.error('Gemini audio transcription failed.', error);
+    }
+  }
+
+  if (!GROQ_API_KEY && !GEMINI_API_KEY) {
+    throw new Error('No API keys configured for audio transcription (Groq or Gemini).');
+  }
+
+  throw new Error(`Failed to transcribe audio: ${errors.join(' | ')}`);
 };
 
 /**
@@ -1906,6 +2024,75 @@ Each tip must be 1–2 sentences, specific and actionable.`;
   } catch (error) {
     console.error('Error generating tips:', error);
     return getDefaultTips(type);
+  }
+};
+
+/**
+ * Generate smart insights for progress page based on user statistics
+ */
+export const generateProgressInsights = async (
+  stats: {
+    totalActivities: number;
+    averageScore: number;
+    streak: number;
+  },
+  skillsData: Array<{ name: string; value: number }>,
+  thisWeekActivities: number,
+  lastWeekActivities: number,
+  cefrLevel?: string | null
+): Promise<string> => {
+  if (!GROQ_API_KEY && !GEMINI_API_KEY) {
+    // Fallback insights
+    const weakSkills = skillsData.filter(s => s.value === 0);
+    if (weakSkills.length > 0) {
+      return `${weakSkills.map(s => s.name).join(' ve ')} seviyen %0 görünüyor. Bu hafta ilerleme kaydetmek için 2 adet Quiz tamamlamanı öneririm.`;
+    }
+    if (thisWeekActivities < 5) {
+      return `Bu hafta ${thisWeekActivities} aktivite tamamladın. Haftalık hedefin 50 aktivite. Daha fazla pratik yaparak ilerlemeyi hızlandırabilirsin!`;
+    }
+    return 'Harika ilerleme! Devam etmek için farklı aktivite türlerini deneyebilirsin.';
+  }
+
+  const weakSkills = skillsData.filter(s => s.value === 0 || s.value < 50);
+  const strongSkills = skillsData.filter(s => s.value >= 70);
+  
+  const prompt = `You are an expert English learning advisor. Analyze the user's progress data and generate a personalized, actionable insight in Turkish (max 200 characters).
+
+USER DATA:
+- Total activities: ${stats.totalActivities}
+- Average score: ${stats.averageScore}%
+- Current streak: ${stats.streak} days
+- CEFR Level: ${cefrLevel || 'Not set'}
+- This week activities: ${thisWeekActivities}
+- Last week activities: ${lastWeekActivities}
+- Weak skills (0-50%): ${weakSkills.map(s => `${s.name} (${s.value}%)`).join(', ') || 'None'}
+- Strong skills (70%+): ${strongSkills.map(s => `${s.name} (${s.value}%)`).join(', ') || 'None'}
+
+Generate ONE concise, actionable insight that:
+1. Identifies specific weak areas (if any)
+2. Provides concrete action steps (e.g., "2 adet Quiz tamamla")
+3. Is encouraging and motivating
+4. Is written in Turkish
+5. Is max 200 characters
+
+Return ONLY the insight text, no quotes, no markdown, no code blocks.`;
+
+  try {
+    const response = await callAIWithBackup(
+      prompt,
+      'Expert English teacher. Return only the insight text in Turkish.',
+      300
+    );
+    const insight = typeof response === 'string' ? response.trim() : String(response).trim();
+    return insight.length > 0 ? insight : 'Harika ilerleme! Devam etmek için farklı aktivite türlerini deneyebilirsin.';
+  } catch (error) {
+    console.error('Error generating progress insights:', error);
+    // Fallback
+    const weakSkills = skillsData.filter(s => s.value === 0);
+    if (weakSkills.length > 0) {
+      return `${weakSkills.map(s => s.name).join(' ve ')} seviyen %0 görünüyor. Bu hafta ilerleme kaydetmek için 2 adet Quiz tamamlamanı öneririm.`;
+    }
+    return 'Harika ilerleme! Devam etmek için farklı aktivite türlerini deneyebilirsin.';
   }
 };
 

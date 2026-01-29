@@ -1,7 +1,6 @@
 import { useState, useEffect, useMemo, useRef } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { CheckCircle, XCircle, Clock, ChevronRight, ChevronLeft, Sparkles, BookOpen } from 'lucide-react';
-import { QuizResult } from './assessment-platform';
 import { generateQuizQuestions, generateIELTSSimulation, generateReadingComprehension } from '../lib/ai-services';
 import { toast } from 'sonner';
 import { useLanguage } from '../contexts/LanguageContext';
@@ -317,6 +316,9 @@ export function QuizInterface({ courseId, onComplete, onBack, questionCount: pro
         correctAnswers: correctCount,
         timeSpent: timeElapsed,
         courseTitle: quizInfo.title,
+        questions: questions,
+        userAnswers: selections,
+        readingPassage: readingPassage || undefined,
       });
     }
   };

@@ -7,9 +7,10 @@ import { quizCategories } from './quiz-section';
 
 interface QuizHistoryProps {
   onBack: () => void;
+  onQuizClick?: (quizId: string) => void;
 }
 
-export function QuizHistory({ onBack }: QuizHistoryProps) {
+export function QuizHistory({ onBack, onQuizClick }: QuizHistoryProps) {
   const { t } = useLanguage();
   const [quizHistory, setQuizHistory] = useState<UserActivity[]>([]);
 
@@ -157,12 +158,13 @@ export function QuizHistory({ onBack }: QuizHistoryProps) {
             const colors = getQuizColor(quiz.courseId);
 
             return (
-              <motion.div
+              <motion.button
                 key={quiz.id}
+                onClick={() => onQuizClick?.(quiz.id)}
                 initial={{ opacity: 0, scale: 0.95 }}
                 animate={{ opacity: 1, scale: 1 }}
                 transition={{ delay: index * 0.03 }}
-                className={`${colors.bodyBg} rounded-3xl border-2 ${colors.border} shadow-lg hover:shadow-xl transition-all flex flex-col overflow-hidden`}
+                className={`${colors.bodyBg} rounded-3xl border-2 ${colors.border} shadow-lg hover:shadow-xl transition-all flex flex-col overflow-hidden cursor-pointer w-full text-left`}
               >
                 {/* Header */}
                 <div className={`p-4 ${colors.bg}`}>
@@ -228,7 +230,7 @@ export function QuizHistory({ onBack }: QuizHistoryProps) {
                     )}
                   </div>
                 </div>
-              </motion.div>
+              </motion.button>
             );
           })}
         </div>

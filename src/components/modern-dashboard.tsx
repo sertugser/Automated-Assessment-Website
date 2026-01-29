@@ -23,9 +23,10 @@ interface ModernDashboardProps {
   cefrLevel?: CEFRLevel | null;
   onRetakePlacement?: () => void;
   recommendations?: Recommendation[];
+  onOpenActivity?: (activityId: string, type: 'speaking' | 'writing' | 'quiz') => void;
 }
 
-export function ModernDashboard({ userName = 'Student', cefrLevel, onRetakePlacement, recommendations }: ModernDashboardProps) {
+export function ModernDashboard({ userName = 'Student', cefrLevel, onRetakePlacement, recommendations, onOpenActivity }: ModernDashboardProps) {
   const { t } = useLanguage();
   const [stats, setStats] = useState(getUserStats());
   const [recentActivity, setRecentActivity] = useState<UserActivity[]>([]);
@@ -283,7 +284,17 @@ export function ModernDashboard({ userName = 'Student', cefrLevel, onRetakePlace
             <div className="space-y-3">
               {recentActivity.length > 0 ? (
                 recentActivity.map((activity) => (
-                  <div key={activity.id} className="flex items-center justify-between p-3 bg-gray-50 rounded-lg hover:bg-gray-100 transition-colors">
+                  <button
+                    key={activity.id}
+                    type="button"
+                    onClick={() => {
+                      if (!onOpenActivity) return;
+                      if (activity.type === 'speaking' || activity.type === 'writing' || activity.type === 'quiz') {
+                        onOpenActivity(activity.id, activity.type as 'speaking' | 'writing' | 'quiz');
+                      }
+                    }}
+                    className="w-full flex items-center justify-between p-3 bg-gray-50 rounded-lg hover:bg-gray-100 transition-colors text-left"
+                  >
                     <div>
                       <div className={`font-semibold ${getActivityColor(activity.type)} text-sm capitalize`}>
                         {activity.courseTitle || activity.type}
@@ -294,7 +305,7 @@ export function ModernDashboard({ userName = 'Student', cefrLevel, onRetakePlace
                       <div className="font-bold text-gray-900">{activity.score}%</div>
                       <div className="text-xs text-gray-500">{t('dashboard.score')}</div>
                     </div>
-                  </div>
+                  </button>
                 ))
               ) : (
                 <div className="text-center py-4 text-gray-500 text-sm">

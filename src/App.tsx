@@ -10,20 +10,58 @@ export default function App() {
   const [currentPage, setCurrentPage] = useState<'landing' | 'auth' | 'placement' | 'platform'>('landing');
   const [currentUser, setCurrentUser] = useState<User | null>(null);
 
-  // Check if user is already logged in on mount
   useEffect(() => {
     const user = getCurrentUser();
     if (user) {
       setCurrentUser(user);
-      setCurrentPage(user.placementTestCompleted ? 'platform' : 'placement');
+    }
+
+    // Son ziyaret edilen ana sayfayı (landing/auth/placement/platform) geri yükle
+    try {
+      const savedPage = localStorage.getItem('assessai_current_page');
+      const allowedPages: Array<'landing' | 'auth' | 'placement' | 'platform'> = [
+        'landing',
+        'auth',
+        'placement',
+        'platform',
+      ];
+
+      if (savedPage && allowedPages.includes(savedPage as any)) {
+        // Kullanıcı yoksa, korumalı sayfalara otomatik gitme
+        if (!user && (savedPage === 'placement' || savedPage === 'platform')) {
+          setCurrentPage('landing');
+        } else {
+          setCurrentPage(savedPage as any);
+        }
+      }
+    } catch {
+      // localStorage erişilemezse varsayılan landing'de kal
     }
   }, []);
 
+  // Her sayfa değiştiğinde son konumu kaydet
+  useEffect(() => {
+    try {
+      localStorage.setItem('assessai_current_page', currentPage);
+    } catch {
+      // Sessizce yoksay
+    }
+  }, [currentPage]);
+
   const handleAuthSuccess = (userId: string, role: UserRole) => {
+    // Login olduktan sonra dashboard'da başlamak için
+    // önce son ziyaret edilen platform sekmesini temizliyoruz
+    try {
+      localStorage.removeItem('assessai_current_screen');
+    } catch {
+      // localStorage erişilemezse sessizce devam et
+    }
+
     const user = getCurrentUser();
     if (user) {
       setCurrentUser(user);
-      setCurrentPage(user.placementTestCompleted ? 'platform' : 'placement');
+      // Login'den hemen sonra her zaman dashboard (platform) ekranına git
+      setCurrentPage('platform');
     }
   };
 
