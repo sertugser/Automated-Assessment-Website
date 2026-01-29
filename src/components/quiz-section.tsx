@@ -423,7 +423,7 @@ export function QuizSection({ onCourseSelect, cefrLevel = null, onViewAllQuizzes
                         <div className={`p-3 bg-gradient-to-br ${category.color} rounded-xl`}>
                           <category.icon className="w-6 h-6 text-white" />
                         </div>
-                        <span className={`px-2.5 py-1 rounded-full text-xs font-semibold ${getLevelColor(displayLevel)}`}>
+                        <span className={`px-3 py-1.5 rounded-full text-sm font-semibold ${getLevelColor(displayLevel)}`}>
                           {displayLevel}
                         </span>
                       </div>

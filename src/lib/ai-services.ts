@@ -1794,15 +1794,53 @@ export const generateIELTSSimulation = async (): Promise<IELTSQuestion[]> => {
 export type CEFRLevel = 'A1' | 'A2' | 'B1' | 'B2' | 'C1' | 'C2';
 
 /**
- * Map placement test score (0–100) to CEFR level.
- * Calibrated for a mixed-difficulty 15–20 question test.
+ * CEFR level weights for placement test scoring.
+ * Higher levels have higher weights to accurately assess user's true level.
+ */
+const CEFR_WEIGHTS: Record<CEFRLevel, number> = {
+  A1: 1,
+  A2: 2,
+  B1: 3,
+  B2: 4,
+  C1: 5,
+  C2: 6,
+};
+
+/**
+ * Calculate weighted score from placement test answers.
+ * @param questions Array of questions with weights
+ * @param answers Array of boolean answers (true = correct, false = incorrect, null = unanswered)
+ * @returns Weighted score percentage (0-100)
+ */
+export const calculateWeightedScore = (
+  questions: PlacementQuestion[],
+  answers: (boolean | null)[]
+): number => {
+  let totalWeight = 0;
+  let earnedWeight = 0;
+  
+  questions.forEach((q, index) => {
+    const answer = answers[index];
+    totalWeight += q.weight;
+    if (answer === true) {
+      earnedWeight += q.weight;
+    }
+  });
+  
+  if (totalWeight === 0) return 0;
+  return Math.round((earnedWeight / totalWeight) * 100);
+};
+
+/**
+ * Map weighted placement test score (0–100) to CEFR level.
+ * Calibrated for weighted scoring where higher-level questions matter more.
  */
 export const scoreToCEFR = (scorePercent: number): CEFRLevel => {
-  if (scorePercent <= 20) return 'A1';
-  if (scorePercent <= 35) return 'A2';
+  if (scorePercent <= 15) return 'A1';
+  if (scorePercent <= 30) return 'A2';
   if (scorePercent <= 50) return 'B1';
-  if (scorePercent <= 65) return 'B2';
-  if (scorePercent <= 80) return 'C1';
+  if (scorePercent <= 70) return 'B2';
+  if (scorePercent <= 85) return 'C1';
   return 'C2';
 };
 
@@ -1813,6 +1851,10 @@ export type PlacementQuestion = {
   correctAnswer: number;
   explanation: string;
   topic: string;
+  /** CEFR level of this question (A1-C2) */
+  cefrLevel: CEFRLevel;
+  /** Weight for scoring (higher = more important) */
+  weight: number;
 };
 
 /**
@@ -1828,49 +1870,82 @@ function shuffle<T>(arr: T[]): T[] {
 
 /**
  * Default placement questions (A1–C2 mix). Used when API keys are missing or API fails.
- * Each call shuffles the pool and picks `count` questions so retakes get a different set.
+ * Questions are distributed across CEFR levels with appropriate weights.
+ * Distribution for 18 questions: A1(3), A2(3), B1(4), B2(4), C1(2), C2(2)
  */
 export function getDefaultPlacementQuestions(count: number = 18): PlacementQuestion[] {
-  const pool: Omit<PlacementQuestion, 'id'>[] = [
-    { question: 'What ___ your name?', options: ['is', 'are', 'be', 'am'], correctAnswer: 0, explanation: '"What is your name?" uses "is" with singular "name".', topic: 'Grammar' },
-    { question: 'She ___ to school every day.', options: ['go', 'goes', 'going', 'gone'], correctAnswer: 1, explanation: 'Third person singular (she) takes "goes".', topic: 'Grammar' },
-    { question: 'I have ___ apple and ___ orange.', options: ['a / a', 'an / an', 'a / an', 'an / a'], correctAnswer: 1, explanation: '"an" before vowel sounds (apple, orange).', topic: 'Grammar' },
-    { question: 'They ___ watching TV when I arrived.', options: ['was', 'were', 'is', 'are'], correctAnswer: 1, explanation: 'Past continuous: "they" + "were" + -ing.', topic: 'Grammar' },
-    { question: 'The book is ___ the table.', options: ['in', 'on', 'at', 'by'], correctAnswer: 1, explanation: 'We use "on" for surfaces (table).', topic: 'Grammar' },
-    { question: 'If it ___, we will stay at home.', options: ['rain', 'rains', 'rained', 'raining'], correctAnswer: 1, explanation: 'First conditional: if + present, will + base.', topic: 'Grammar' },
-    { question: 'She is ___ than her sister.', options: ['tall', 'taller', 'tallest', 'more tall'], correctAnswer: 1, explanation: 'Comparative: short adjective + -er.', topic: 'Grammar' },
-    { question: 'I ___ already finished my homework.', options: ['has', 'have', 'had', 'having'], correctAnswer: 1, explanation: '"I" takes "have"; present perfect.', topic: 'Grammar' },
-    { question: 'We need to ___ the project by Friday.', options: ['complete', 'completing', 'completed', 'completes'], correctAnswer: 0, explanation: '"need to" + base form (complete).', topic: 'Grammar' },
-    { question: 'He asked me where I ___.', options: ['live', 'lived', 'living', 'lives'], correctAnswer: 1, explanation: 'Reported speech: present → past (live → lived).', topic: 'Grammar' },
-    { question: 'The meeting was ___ successful.', options: ['high', 'highly', 'height', 'higher'], correctAnswer: 1, explanation: '"Highly" is the adverb (modifies "successful").', topic: 'Vocabulary' },
-    { question: 'What does "postpone" mean?', options: ['to cancel', 'to delay', 'to finish', 'to start'], correctAnswer: 1, explanation: '"Postpone" means to delay or put off.', topic: 'Vocabulary' },
-    { question: 'She ___ her job last month.', options: ['resigned from', 'resigned', 'resign', 'resigning'], correctAnswer: 0, explanation: '"Resign from" a job is the correct phrase.', topic: 'Vocabulary' },
-    { question: 'The opposite of "expand" is ___.', options: ['extend', 'contract', 'grow', 'increase'], correctAnswer: 1, explanation: '"Contract" means to shrink or reduce.', topic: 'Vocabulary' },
-    { question: 'We should ___ off the meeting until next week.', options: ['put', 'take', 'call', 'set'], correctAnswer: 0, explanation: '"Put off" = postpone.', topic: 'Vocabulary' },
-    { question: 'He ___ his success to hard work.', options: ['attributes', 'contributes', 'distributes', 'assigns'], correctAnswer: 0, explanation: '"Attribute X to Y" = credit X to Y.', topic: 'Vocabulary' },
-    { question: 'Despite the ___, the event went ahead.', options: ['weather', 'weathers', 'weathering', 'weather\'s'], correctAnswer: 0, explanation: '"Despite" + noun. "Weather" is uncountable.', topic: 'Grammar' },
-    { question: 'Neither the manager nor the employees ___ present.', options: ['was', 'were', 'is', 'are'], correctAnswer: 1, explanation: 'With "nor", verb agrees with closer subject ("employees").', topic: 'Grammar' },
-    { question: 'By next year, she ___ university.', options: ['will finish', 'finishes', 'will have finished', 'has finished'], correctAnswer: 2, explanation: 'Future perfect: "by" + future time → will have + past participle.', topic: 'Grammar' },
-    { question: 'The report ___ by the team last week.', options: ['written', 'was written', 'wrote', 'is written'], correctAnswer: 1, explanation: 'Passive past: was/were + past participle.', topic: 'Grammar' },
-    { question: 'I wish I ___ more time.', options: ['have', 'had', 'would have', 'having'], correctAnswer: 1, explanation: 'Unreal wish about present: past simple "had".', topic: 'Grammar' },
-    { question: '___ you mind opening the window?', options: ['Do', 'Would', 'Should', 'Could'], correctAnswer: 1, explanation: '"Would you mind" is the polite request form.', topic: 'Grammar' },
-    { question: 'She has ___ redesigned the website.', options: ['yet', 'already', 'still', 'since'], correctAnswer: 1, explanation: '"Already" = before now (positive).', topic: 'Grammar' },
-    { question: 'The company is ___ expanding into Asia.', options: ['considering', 'regarding', 'according', 'depending'], correctAnswer: 0, explanation: '"Consider" + -ing = think about doing.', topic: 'Vocabulary' },
-    { question: '"Comprehensive" means ___.', options: ['brief', 'partial', 'complete', 'simple'], correctAnswer: 2, explanation: '"Comprehensive" = complete, covering everything.', topic: 'Vocabulary' },
-    { question: 'We must ___ to the new regulations.', options: ['adapt', 'adopt', 'adept', 'affect'], correctAnswer: 0, explanation: '"Adapt" = adjust to; "adopt" = take on.', topic: 'Vocabulary' },
-    { question: 'The findings ___ further investigation.', options: ['warrant', 'warn', 'waste', 'wander'], correctAnswer: 0, explanation: '"Warrant" = justify or deserve.', topic: 'Vocabulary' },
-    { question: 'He ___ that he had made a mistake.', options: ['acknowledged', 'accorded', 'acquired', 'accused'], correctAnswer: 0, explanation: '"Acknowledge" = admit or recognize.', topic: 'Vocabulary' },
-    { question: 'The ___ of the project is next month.', options: ['deadline', 'headline', 'outline', 'underline'], correctAnswer: 0, explanation: '"Deadline" = due date.', topic: 'Vocabulary' },
-    { question: 'Everyone ___ to submit the form by Friday.', options: ['is required', 'are required', 'require', 'requires'], correctAnswer: 0, explanation: 'Indefinite "everyone" is singular → "is required".', topic: 'Grammar' },
-    { question: 'Not until yesterday ___ the news.', options: ['I heard', 'did I hear', 'I have heard', 'had I heard'], correctAnswer: 1, explanation: 'Inversion after "not until": did I hear.', topic: 'Grammar' },
-  ];
-  const shuffled = shuffle([...pool]);
-  let selected = shuffled.slice(0, count).map((q, i) => ({ ...q, id: i + 1 }));
+  const poolByLevel: Record<CEFRLevel, Omit<PlacementQuestion, 'id'>[]> = {
+    A1: [
+      { question: 'What ___ your name?', options: ['is', 'are', 'be', 'am'], correctAnswer: 0, explanation: '"What is your name?" uses "is" with singular "name".', topic: 'Grammar', cefrLevel: 'A1', weight: CEFR_WEIGHTS.A1 },
+      { question: 'She ___ to school every day.', options: ['go', 'goes', 'going', 'gone'], correctAnswer: 1, explanation: 'Third person singular (she) takes "goes".', topic: 'Grammar', cefrLevel: 'A1', weight: CEFR_WEIGHTS.A1 },
+      { question: 'I have ___ apple and ___ orange.', options: ['a / a', 'an / an', 'a / an', 'an / a'], correctAnswer: 1, explanation: '"an" before vowel sounds (apple, orange).', topic: 'Grammar', cefrLevel: 'A1', weight: CEFR_WEIGHTS.A1 },
+      { question: 'The book is ___ the table.', options: ['in', 'on', 'at', 'by'], correctAnswer: 1, explanation: 'We use "on" for surfaces (table).', topic: 'Grammar', cefrLevel: 'A1', weight: CEFR_WEIGHTS.A1 },
+      { question: 'I ___ a student.', options: ['am', 'is', 'are', 'be'], correctAnswer: 0, explanation: '"I" takes "am" in present tense.', topic: 'Grammar', cefrLevel: 'A1', weight: CEFR_WEIGHTS.A1 },
+    ],
+    A2: [
+      { question: 'They ___ watching TV when I arrived.', options: ['was', 'were', 'is', 'are'], correctAnswer: 1, explanation: 'Past continuous: "they" + "were" + -ing.', topic: 'Grammar', cefrLevel: 'A2', weight: CEFR_WEIGHTS.A2 },
+      { question: 'She is ___ than her sister.', options: ['tall', 'taller', 'tallest', 'more tall'], correctAnswer: 1, explanation: 'Comparative: short adjective + -er.', topic: 'Grammar', cefrLevel: 'A2', weight: CEFR_WEIGHTS.A2 },
+      { question: 'I ___ already finished my homework.', options: ['has', 'have', 'had', 'having'], correctAnswer: 1, explanation: '"I" takes "have"; present perfect.', topic: 'Grammar', cefrLevel: 'A2', weight: CEFR_WEIGHTS.A2 },
+      { question: 'What does "postpone" mean?', options: ['to cancel', 'to delay', 'to finish', 'to start'], correctAnswer: 1, explanation: '"Postpone" means to delay or put off.', topic: 'Vocabulary', cefrLevel: 'A2', weight: CEFR_WEIGHTS.A2 },
+      { question: 'We should ___ off the meeting until next week.', options: ['put', 'take', 'call', 'set'], correctAnswer: 0, explanation: '"Put off" = postpone.', topic: 'Vocabulary', cefrLevel: 'A2', weight: CEFR_WEIGHTS.A2 },
+    ],
+    B1: [
+      { question: 'If it ___, we will stay at home.', options: ['rain', 'rains', 'rained', 'raining'], correctAnswer: 1, explanation: 'First conditional: if + present, will + base.', topic: 'Grammar', cefrLevel: 'B1', weight: CEFR_WEIGHTS.B1 },
+      { question: 'We need to ___ the project by Friday.', options: ['complete', 'completing', 'completed', 'completes'], correctAnswer: 0, explanation: '"need to" + base form (complete).', topic: 'Grammar', cefrLevel: 'B1', weight: CEFR_WEIGHTS.B1 },
+      { question: 'He asked me where I ___.', options: ['live', 'lived', 'living', 'lives'], correctAnswer: 1, explanation: 'Reported speech: present → past (live → lived).', topic: 'Grammar', cefrLevel: 'B1', weight: CEFR_WEIGHTS.B1 },
+      { question: 'The meeting was ___ successful.', options: ['high', 'highly', 'height', 'higher'], correctAnswer: 1, explanation: '"Highly" is the adverb (modifies "successful").', topic: 'Vocabulary', cefrLevel: 'B1', weight: CEFR_WEIGHTS.B1 },
+      { question: 'She ___ her job last month.', options: ['resigned from', 'resigned', 'resign', 'resigning'], correctAnswer: 0, explanation: '"Resign from" a job is the correct phrase.', topic: 'Vocabulary', cefrLevel: 'B1', weight: CEFR_WEIGHTS.B1 },
+      { question: 'The opposite of "expand" is ___.', options: ['extend', 'contract', 'grow', 'increase'], correctAnswer: 1, explanation: '"Contract" means to shrink or reduce.', topic: 'Vocabulary', cefrLevel: 'B1', weight: CEFR_WEIGHTS.B1 },
+    ],
+    B2: [
+      { question: 'Despite the ___, the event went ahead.', options: ['weather', 'weathers', 'weathering', 'weather\'s'], correctAnswer: 0, explanation: '"Despite" + noun. "Weather" is uncountable.', topic: 'Grammar', cefrLevel: 'B2', weight: CEFR_WEIGHTS.B2 },
+      { question: 'Neither the manager nor the employees ___ present.', options: ['was', 'were', 'is', 'are'], correctAnswer: 1, explanation: 'With "nor", verb agrees with closer subject ("employees").', topic: 'Grammar', cefrLevel: 'B2', weight: CEFR_WEIGHTS.B2 },
+      { question: 'The report ___ by the team last week.', options: ['written', 'was written', 'wrote', 'is written'], correctAnswer: 1, explanation: 'Passive past: was/were + past participle.', topic: 'Grammar', cefrLevel: 'B2', weight: CEFR_WEIGHTS.B2 },
+      { question: 'I wish I ___ more time.', options: ['have', 'had', 'would have', 'having'], correctAnswer: 1, explanation: 'Unreal wish about present: past simple "had".', topic: 'Grammar', cefrLevel: 'B2', weight: CEFR_WEIGHTS.B2 },
+      { question: 'He ___ his success to hard work.', options: ['attributes', 'contributes', 'distributes', 'assigns'], correctAnswer: 0, explanation: '"Attribute X to Y" = credit X to Y.', topic: 'Vocabulary', cefrLevel: 'B2', weight: CEFR_WEIGHTS.B2 },
+      { question: 'The company is ___ expanding into Asia.', options: ['considering', 'regarding', 'according', 'depending'], correctAnswer: 0, explanation: '"Consider" + -ing = think about doing.', topic: 'Vocabulary', cefrLevel: 'B2', weight: CEFR_WEIGHTS.B2 },
+    ],
+    C1: [
+      { question: 'By next year, she ___ university.', options: ['will finish', 'finishes', 'will have finished', 'has finished'], correctAnswer: 2, explanation: 'Future perfect: "by" + future time → will have + past participle.', topic: 'Grammar', cefrLevel: 'C1', weight: CEFR_WEIGHTS.C1 },
+      { question: '___ you mind opening the window?', options: ['Do', 'Would', 'Should', 'Could'], correctAnswer: 1, explanation: '"Would you mind" is the polite request form.', topic: 'Grammar', cefrLevel: 'C1', weight: CEFR_WEIGHTS.C1 },
+      { question: '"Comprehensive" means ___.', options: ['brief', 'partial', 'complete', 'simple'], correctAnswer: 2, explanation: '"Comprehensive" = complete, covering everything.', topic: 'Vocabulary', cefrLevel: 'C1', weight: CEFR_WEIGHTS.C1 },
+      { question: 'We must ___ to the new regulations.', options: ['adapt', 'adopt', 'adept', 'affect'], correctAnswer: 0, explanation: '"Adapt" = adjust to; "adopt" = take on.', topic: 'Vocabulary', cefrLevel: 'C1', weight: CEFR_WEIGHTS.C1 },
+    ],
+    C2: [
+      { question: 'The findings ___ further investigation.', options: ['warrant', 'warn', 'waste', 'wander'], correctAnswer: 0, explanation: '"Warrant" = justify or deserve.', topic: 'Vocabulary', cefrLevel: 'C2', weight: CEFR_WEIGHTS.C2 },
+      { question: 'He ___ that he had made a mistake.', options: ['acknowledged', 'accorded', 'acquired', 'accused'], correctAnswer: 0, explanation: '"Acknowledge" = admit or recognize.', topic: 'Vocabulary', cefrLevel: 'C2', weight: CEFR_WEIGHTS.C2 },
+      { question: 'Everyone ___ to submit the form by Friday.', options: ['is required', 'are required', 'require', 'requires'], correctAnswer: 0, explanation: 'Indefinite "everyone" is singular → "is required".', topic: 'Grammar', cefrLevel: 'C2', weight: CEFR_WEIGHTS.C2 },
+      { question: 'Not until yesterday ___ the news.', options: ['I heard', 'did I hear', 'I have heard', 'had I heard'], correctAnswer: 1, explanation: 'Inversion after "not until": did I hear.', topic: 'Grammar', cefrLevel: 'C2', weight: CEFR_WEIGHTS.C2 },
+    ],
+  };
+
+  // Distribute questions across levels: A1(3), A2(3), B1(4), B2(4), C1(2), C2(2) = 18 total
+  const distribution: Record<CEFRLevel, number> = {
+    A1: 3,
+    A2: 3,
+    B1: 4,
+    B2: 4,
+    C1: 2,
+    C2: 2,
+  };
+
+  const selected: Omit<PlacementQuestion, 'id'>[] = [];
   
-  // Ensure balanced answer distribution
-  selected = ensureBalancedAnswerDistribution(selected);
+  // Select questions from each level
+  (Object.keys(distribution) as CEFRLevel[]).forEach(level => {
+    const needed = distribution[level];
+    const levelPool = shuffle([...poolByLevel[level]]);
+    selected.push(...levelPool.slice(0, needed));
+  });
+
+  // Shuffle all selected questions
+  const shuffled = shuffle(selected);
   
-  return selected;
+  // Add IDs and ensure balanced answer distribution
+  let result = shuffled.map((q, i) => ({ ...q, id: i + 1 }));
+  result = ensureBalancedAnswerDistribution(result);
+  
+  return result;
 }
 
 /**
@@ -1885,15 +1960,34 @@ export const generatePlacementQuestions = async (
   }
 
   const variation = Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
+  
+  // Distribute questions across CEFR levels: A1(3), A2(3), B1(4), B2(4), C1(2), C2(2) = 18 total
+  const distribution: Record<CEFRLevel, number> = {
+    A1: 3,
+    A2: 3,
+    B1: 4,
+    B2: 4,
+    C1: 2,
+    C2: 2,
+  };
+  
   const prompt = `You are an expert English assessor creating a CEFR placement test. Generate a completely NEW, UNIQUE set of exactly ${count} questions (request id: ${variation}). Never repeat the same questions across different requests.
+
+CRITICAL DISTRIBUTION REQUIREMENTS:
+- A1 level: ${distribution.A1} questions (weight: 1) - Very basic grammar and vocabulary
+- A2 level: ${distribution.A2} questions (weight: 2) - Basic grammar and common vocabulary
+- B1 level: ${distribution.B1} questions (weight: 3) - Intermediate grammar and vocabulary
+- B2 level: ${distribution.B2} questions (weight: 4) - Upper-intermediate grammar and vocabulary
+- C1 level: ${distribution.C1} questions (weight: 5) - Advanced grammar and vocabulary
+- C2 level: ${distribution.C2} questions (weight: 6) - Near-native grammar and vocabulary
 
 IMPORTANT:
 - Create fresh questions every time. Avoid the most common textbook examples (e.g. "What is your name?", "She goes to school").
 - Vary grammar points: different tenses, conditionals, modals, passives, reported speech, articles, prepositions.
 - Vary vocabulary: phrasal verbs, collocations, formal/informal register, idioms, word formation.
-- Mix difficulty: some A1–A2, some B1–B2, some C1–C2.
 - Each question must have exactly 4 options. correctAnswer is the index 0–3.
 - CRITICAL: Distribute correct answers evenly across all options (0, 1, 2, 3). Do NOT put consecutive correct answers in the same option. Vary them so no more than 2 consecutive questions have the same correctAnswer index.
+- Each question MUST include its CEFR level (cefrLevel) and weight matching the level.
 
 Return ONLY a valid JSON array (no markdown, no code blocks):
 [
@@ -1902,7 +1996,9 @@ Return ONLY a valid JSON array (no markdown, no code blocks):
     "options": ["Option A", "Option B", "Option C", "Option D"],
     "correctAnswer": 0,
     "explanation": "Brief explanation",
-    "topic": "Grammar" or "Vocabulary"
+    "topic": "Grammar" or "Vocabulary",
+    "cefrLevel": "A1" (or A2, B1, B2, C1, C2),
+    "weight": 1 (matching the cefrLevel: A1=1, A2=2, B1=3, B2=4, C1=5, C2=6)
   }
 ]`;
 
@@ -1918,20 +2014,48 @@ Return ONLY a valid JSON array (no markdown, no code blocks):
       return getDefaultPlacementQuestions(count);
     }
 
-    let processedQuestions = raw.slice(0, count).map((q: any, index: number) => ({
-      id: index + 1,
-      question: q.question || `Question ${index + 1}`,
-      options:
-        Array.isArray(q.options) && q.options.length === 4
-          ? q.options
-          : ['Option A', 'Option B', 'Option C', 'Option D'],
-      correctAnswer:
-        typeof q.correctAnswer === 'number' && q.correctAnswer >= 0 && q.correctAnswer < 4
-          ? q.correctAnswer
-          : 0,
-      explanation: q.explanation || 'No explanation provided',
-      topic: q.topic || 'Grammar',
-    }));
+    let processedQuestions = raw.slice(0, count).map((q: any, index: number) => {
+      const cefrLevel = (q.cefrLevel && ['A1', 'A2', 'B1', 'B2', 'C1', 'C2'].includes(q.cefrLevel)) 
+        ? q.cefrLevel as CEFRLevel 
+        : 'B1'; // Default to B1 if invalid
+      const weight = typeof q.weight === 'number' && q.weight > 0 
+        ? q.weight 
+        : CEFR_WEIGHTS[cefrLevel];
+      
+      return {
+        id: index + 1,
+        question: q.question || `Question ${index + 1}`,
+        options:
+          Array.isArray(q.options) && q.options.length === 4
+            ? q.options
+            : ['Option A', 'Option B', 'Option C', 'Option D'],
+        correctAnswer:
+          typeof q.correctAnswer === 'number' && q.correctAnswer >= 0 && q.correctAnswer < 4
+            ? q.correctAnswer
+            : 0,
+        explanation: q.explanation || 'No explanation provided',
+        topic: q.topic || 'Grammar',
+        cefrLevel,
+        weight,
+      };
+    });
+    
+    // If AI didn't provide proper distribution, redistribute questions
+    const levelCounts: Record<CEFRLevel, number> = { A1: 0, A2: 0, B1: 0, B2: 0, C1: 0, C2: 0 };
+    processedQuestions.forEach(q => levelCounts[q.cefrLevel]++);
+    
+    // If distribution is off, use default questions instead
+    const expectedDistribution: Record<CEFRLevel, number> = {
+      A1: 3, A2: 3, B1: 4, B2: 4, C1: 2, C2: 2,
+    };
+    const distributionValid = Object.keys(expectedDistribution).every(
+      level => Math.abs(levelCounts[level as CEFRLevel] - expectedDistribution[level as CEFRLevel]) <= 1
+    );
+    
+    if (!distributionValid) {
+      console.warn('AI questions distribution invalid, using default questions');
+      return getDefaultPlacementQuestions(count);
+    }
     
     // Ensure balanced answer distribution
     processedQuestions = ensureBalancedAnswerDistribution(processedQuestions);
@@ -2028,71 +2152,88 @@ Each tip must be 1–2 sentences, specific and actionable.`;
 };
 
 /**
- * Generate smart insights for progress page based on user statistics
+ * Generate smart insights for progress page. Output is in English, AI-generated,
+ * and tailored to the user's current needs (weak skills, mistakes, streak, activity trends).
  */
 export const generateProgressInsights = async (
   stats: {
     totalActivities: number;
     averageScore: number;
     streak: number;
+    lastActivityDate?: string | null;
   },
   skillsData: Array<{ name: string; value: number }>,
   thisWeekActivities: number,
   lastWeekActivities: number,
-  cefrLevel?: string | null
+  cefrLevel?: string | null,
+  mistakeCounts?: Array<{ topic: string; mistakeCount: number }>
 ): Promise<string> => {
-  if (!GROQ_API_KEY && !GEMINI_API_KEY) {
-    // Fallback insights
-    const weakSkills = skillsData.filter(s => s.value === 0);
-    if (weakSkills.length > 0) {
-      return `${weakSkills.map(s => s.name).join(' ve ')} seviyen %0 görünüyor. Bu hafta ilerleme kaydetmek için 2 adet Quiz tamamlamanı öneririm.`;
-    }
-    if (thisWeekActivities < 5) {
-      return `Bu hafta ${thisWeekActivities} aktivite tamamladın. Haftalık hedefin 50 aktivite. Daha fazla pratik yaparak ilerlemeyi hızlandırabilirsin!`;
-    }
-    return 'Harika ilerleme! Devam etmek için farklı aktivite türlerini deneyebilirsin.';
-  }
-
   const weakSkills = skillsData.filter(s => s.value === 0 || s.value < 50);
   const strongSkills = skillsData.filter(s => s.value >= 70);
-  
-  const prompt = `You are an expert English learning advisor. Analyze the user's progress data and generate a personalized, actionable insight in Turkish (max 200 characters).
+  const defaultEn = 'Keep up the great work! Try different activity types (quiz, writing, speaking) to broaden your practice.';
+
+  const weakLabel = weakSkills.length >= 4
+    ? 'Your skills'
+    : weakSkills.map(s => s.name).join(' and ');
+
+  if (!GROQ_API_KEY && !GEMINI_API_KEY) {
+    if (weakSkills.length > 0) {
+      if (weakSkills.length >= 4) {
+        return 'Your skills need work. Complete 2 quizzes this week to build progress.';
+      }
+      return `Your ${weakLabel} are at 0%. Complete 2 quizzes this week to build progress.`;
+    }
+    if (thisWeekActivities < 5) {
+      return `You completed ${thisWeekActivities} activities this week. Your goal is 50. Ramp up practice to speed up improvement!`;
+    }
+    return defaultEn;
+  }
+
+  const lastActive = stats.lastActivityDate ? new Date(stats.lastActivityDate) : null;
+  const daysSinceActivity = lastActive
+    ? Math.floor((Date.now() - lastActive.getTime()) / (24 * 60 * 60 * 1000))
+    : null;
+  const mistakesContext =
+    mistakeCounts && mistakeCounts.length > 0
+      ? `\n- Common mistakes (topic → count): ${mistakeCounts.slice(0, 6).map(m => `"${m.topic}" ${m.mistakeCount}`).join(', ')}. Use these to prioritize what to review.`
+      : '';
+
+  const prompt = `You are an expert English learning advisor. Analyze the user's progress and return ONE short, actionable insight IN ENGLISH (max 220 characters). Tailor it to their CURRENT NEEDS.
 
 USER DATA:
 - Total activities: ${stats.totalActivities}
 - Average score: ${stats.averageScore}%
 - Current streak: ${stats.streak} days
 - CEFR Level: ${cefrLevel || 'Not set'}
-- This week activities: ${thisWeekActivities}
-- Last week activities: ${lastWeekActivities}
-- Weak skills (0-50%): ${weakSkills.map(s => `${s.name} (${s.value}%)`).join(', ') || 'None'}
+- This week: ${thisWeekActivities} activities | Last week: ${lastWeekActivities}
+- Weak skills (0–50%): ${weakSkills.map(s => `${s.name} (${s.value}%)`).join(', ') || 'None'}
 - Strong skills (70%+): ${strongSkills.map(s => `${s.name} (${s.value}%)`).join(', ') || 'None'}
+- Days since last activity: ${daysSinceActivity ?? 'N/A'}${mistakesContext}
 
-Generate ONE concise, actionable insight that:
-1. Identifies specific weak areas (if any)
-2. Provides concrete action steps (e.g., "2 adet Quiz tamamla")
-3. Is encouraging and motivating
-4. Is written in Turkish
-5. Is max 200 characters
-
-Return ONLY the insight text, no quotes, no markdown, no code blocks.`;
+Rules:
+1. Focus on what they need NOW: weak skills, low activity, streak at risk, or topics they frequently get wrong.
+2. Give one concrete next step (e.g. "Do 2 Reading quizzes", "Review place prepositions", "Complete a short writing task today").
+3. Be encouraging. Write only in English.
+4. If 4+ skills are weak, say "Your skills" or "several areas"—never list all skill names.
+5. No quotes, markdown, or code. Return ONLY the insight text.`;
 
   try {
     const response = await callAIWithBackup(
       prompt,
-      'Expert English teacher. Return only the insight text in Turkish.',
+      'Expert English teacher. Return only the insight text in English.',
       300
     );
     const insight = typeof response === 'string' ? response.trim() : String(response).trim();
-    return insight.length > 0 ? insight : 'Harika ilerleme! Devam etmek için farklı aktivite türlerini deneyebilirsin.';
+    return insight.length > 0 ? insight : defaultEn;
   } catch (error) {
     console.error('Error generating progress insights:', error);
-    // Fallback
-    const weakSkills = skillsData.filter(s => s.value === 0);
     if (weakSkills.length > 0) {
-      return `${weakSkills.map(s => s.name).join(' ve ')} seviyen %0 görünüyor. Bu hafta ilerleme kaydetmek için 2 adet Quiz tamamlamanı öneririm.`;
+      if (weakSkills.length >= 4) {
+        return 'Your skills need work. Complete 2 quizzes this week to improve.';
+      }
+      return `Your ${weakLabel} need work. Complete 2 quizzes this week to improve.`;
     }
-    return 'Harika ilerleme! Devam etmek için farklı aktivite türlerini deneyebilirsin.';
+    return defaultEn;
   }
 };
 
@@ -2221,6 +2362,160 @@ IMPORTANT: Make recommendations SPECIFIC to their weaknesses. If they scored 50%
     return getDefaultRecommendations(userStats);
   }
 };
+
+export interface LearningDifficultyAnalysis {
+  topic: string;
+  advice: string;
+}
+
+/**
+ * AI analysis: detected difficult topic + English advice. No "learning difficulty" field.
+ */
+export const getLearningDifficultyAnalysis = async (
+  userStats: {
+    streak: number;
+    totalPoints: number;
+    averageScore: number;
+    totalActivities: number;
+    cefrLevel?: CEFRLevel | null;
+  },
+  recentActivities: Array<{
+    type: string;
+    score: number;
+    courseTitle?: string;
+  }>,
+  weaknessAnalysis?: {
+    weakAreas: Array<{ skill: string; score: number; recommendation: string }>;
+    weakQuizTopics: Array<{ topic: string; avgScore: number; attempts: number }>;
+    improvementSuggestions: string[];
+  },
+  mistakeCounts?: Array<{ topic: string; mistakeCount: number }>,
+  wrongAnswerDetails?: Array<{ question: string; userAnswer: string; correctAnswer: string; explanation: string; topic: string }>
+): Promise<LearningDifficultyAnalysis | null> => {
+  if (!GROQ_API_KEY && !GEMINI_API_KEY) {
+    return getDefaultLearningDifficultyAnalysis(weaknessAnalysis, userStats, mistakeCounts, wrongAnswerDetails);
+  }
+
+  const levelStr = userStats.cefrLevel ? `CEFR ${userStats.cefrLevel}` : 'not yet assessed';
+  const statsContext = `Level: ${levelStr}, Streak: ${userStats.streak} days, Total points: ${userStats.totalPoints}, Average score: ${userStats.averageScore}%, Total activities: ${userStats.totalActivities}`;
+  const recentContext = recentActivities.length > 0
+    ? `Recent activities: ${recentActivities.slice(0, 5).map(a => `${a.type} – "${a.courseTitle || 'General'}" (${a.score}%)`).join(', ')}`
+    : 'No recent activities';
+
+  let weaknessContext = '';
+  if (weaknessAnalysis) {
+    const weakSkills = weaknessAnalysis.weakAreas.length > 0
+      ? `Weak skills: ${weaknessAnalysis.weakAreas.map(w => `${w.skill} (${w.score}%)`).join(', ')}`
+      : 'All skill areas OK';
+    const weakTopics = weaknessAnalysis.weakQuizTopics.length > 0
+      ? `Weak topics: ${weaknessAnalysis.weakQuizTopics.map(t => `"${t.topic}" (avg ${t.avgScore}%, ${t.attempts} attempts)`).join(', ')}`
+      : 'No specific weak topics';
+    weaknessContext = `
+WEAKNESS ANALYSIS:
+${weakSkills}
+${weakTopics}
+${weaknessAnalysis.improvementSuggestions.length > 0 ? `\nSuggestions:\n${weaknessAnalysis.improvementSuggestions.map((s, i) => `${i + 1}. ${s}`).join('\n')}` : ''}`;
+  }
+
+  const mistakesContext = mistakeCounts && mistakeCounts.length > 0
+    ? `\nMISTAKE COUNTS (wrong answers per topic): ${mistakeCounts.slice(0, 10).map(m => `"${m.topic}" ${m.mistakeCount} mistakes`).join(', ')}.`
+    : '';
+
+  let wrongAnswersContext = '';
+  if (wrongAnswerDetails && wrongAnswerDetails.length > 0) {
+    wrongAnswersContext = `\n\nWRONG ANSWER DETAILS (actual questions the student got wrong — use these to find SPECIFIC weak points like prepositions, "at"/"in"/"on", verb tenses, specific vocabulary):\n${wrongAnswerDetails.slice(0, 16).map((w, i) => `[${i + 1}] Q: ${w.question} | User chose: "${w.userAnswer}" | Correct: "${w.correctAnswer}" | Explanation: ${w.explanation} | Topic: ${w.topic}`).join('\n')}`;
+  }
+
+  const prompt = `You are an expert English teacher. Analyze the student's performance and return ONLY this JSON object (no other text, no markdown, no code blocks).
+
+USER DATA:
+${statsContext}
+${recentContext}${weaknessContext}${mistakesContext}${wrongAnswersContext}
+
+CRITICAL: Use the WRONG ANSWER DETAILS above to identify SPECIFIC language points the student struggles with (e.g. prepositions, especially "at"; verb tenses; articles; phrasal verbs; particular vocabulary). Do NOT give generic advice like "practice more on topic X". You MUST say what exactly is wrong (e.g. "Your errors show trouble with prepositions, especially 'at' for time/place. Review when to use 'at' vs 'in' vs 'on' and do targeted exercises.").
+
+TASK:
+1. "topic": The specific difficult area. Be precise: e.g. "Prepositions (at/in/on)", "Present perfect vs past simple", "Vocabulary – business terms", or the quiz topic name if no clearer pattern.
+2. "advice": 2–4 sentences of CONCRETE, DETAILED advice IN ENGLISH. Name the exact grammar/vocabulary point(s), reference their wrong vs correct answers or explanations where relevant, and tell them exactly what to review and practice.
+
+Return ONLY this JSON object:
+{"topic":"...","advice":"... in English"}`;
+
+  try {
+    const response = await callAIWithBackup(
+      prompt,
+      'Expert English teacher. Return only the JSON object. Identify specific weak points (e.g. prepositions, "at") from wrong-answer details.',
+      700
+    );
+    const parsed = parseAIResponse(response);
+    if (parsed && typeof parsed.advice === 'string') {
+      return {
+        topic: typeof parsed.topic === 'string' ? String(parsed.topic).trim() : '',
+        advice: String(parsed.advice).trim(),
+      };
+    }
+    return getDefaultLearningDifficultyAnalysis(weaknessAnalysis, userStats, mistakeCounts, wrongAnswerDetails);
+  } catch (e) {
+    console.error('getLearningDifficultyAnalysis error:', e);
+    return getDefaultLearningDifficultyAnalysis(weaknessAnalysis, userStats, mistakeCounts, wrongAnswerDetails);
+  }
+};
+
+function getDefaultLearningDifficultyAnalysis(
+  weaknessAnalysis?: {
+    weakAreas: Array<{ skill: string; score: number; recommendation: string }>;
+    weakQuizTopics: Array<{ topic: string; avgScore: number; attempts: number }>;
+  },
+  userStats?: { averageScore: number; totalActivities: number },
+  mistakeCounts?: Array<{ topic: string; mistakeCount: number }>,
+  wrongAnswerDetails?: Array<{ question: string; userAnswer: string; correctAnswer: string; explanation: string; topic: string }>
+): LearningDifficultyAnalysis | null {
+  if (wrongAnswerDetails && wrongAnswerDetails.length > 0) {
+    const topTopic = mistakeCounts?.[0]?.topic ?? wrongAnswerDetails[0].topic;
+    const excerpts = wrongAnswerDetails.slice(0, 4).map(w => w.explanation).filter(Boolean);
+    const reviewHint = excerpts.length > 0
+      ? ` Focus on reviewing: ${excerpts.map(e => `"${e.slice(0, 80)}${e.length > 80 ? '…' : ''}"`).join('; ')}.`
+      : ' Review the explanations for each question you got wrong.';
+    return {
+      topic: topTopic,
+      advice: `You made ${mistakeCounts?.[0]?.mistakeCount ?? wrongAnswerDetails.length} mistake(s) in "${topTopic}".${reviewHint} Practice similar exercises and pay attention to the specific grammar or vocabulary points in those explanations.`,
+    };
+  }
+  if (mistakeCounts && mistakeCounts.length > 0) {
+    const top = mistakeCounts[0];
+    return {
+      topic: top.topic,
+      advice: `You made ${top.mistakeCount} mistake${top.mistakeCount === 1 ? '' : 's'} in "${top.topic}". Practice more exercises and quizzes on this topic, and review the explanations for questions you got wrong.`,
+    };
+  }
+  if (weaknessAnalysis?.weakAreas?.length) {
+    const w = weaknessAnalysis.weakAreas[0];
+    return {
+      topic: w.skill,
+      advice: w.recommendation,
+    };
+  }
+  if (weaknessAnalysis?.weakQuizTopics?.length) {
+    const t = weaknessAnalysis.weakQuizTopics[0];
+    return {
+      topic: t.topic,
+      advice: `Practice more quizzes and exercises on "${t.topic}" to strengthen this area.`,
+    };
+  }
+  if (userStats && userStats.totalActivities === 0) {
+    return {
+      topic: '',
+      advice: 'Complete the placement test, then try quizzes, writing, and speaking to identify areas to work on.',
+    };
+  }
+  if (userStats && userStats.averageScore < 70) {
+    return {
+      topic: '',
+      advice: 'Focus on your weaker areas, and practise quizzes, writing, and speaking regularly to improve your average score.',
+    };
+  }
+  return null;
+}
 
 /**
  * Get default recommendations (fallback)

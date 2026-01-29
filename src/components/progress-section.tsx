@@ -14,91 +14,12 @@ import {
   getMonthlyData, 
   getSkillsBreakdown,
   getActivityTypeDistribution,
-  getActivities 
+  getActivities,
+  getMistakeCountsByTopic
 } from '../lib/user-progress';
 import { generateProgressInsights } from '../lib/ai-services';
 import { useLanguage } from '../contexts/LanguageContext';
 import { getCurrentUser } from '../lib/auth';
-
-// Heatmap component
-function ActivityHeatmap({ activities }: { activities: Array<{ date: string }> }) {
-  const today = new Date();
-  const days: Date[] = [];
-  
-  // Generate last 140 days (20 weeks) - fill the right side
-  for (let i = 139; i >= 0; i--) {
-    const date = new Date(today);
-    date.setDate(date.getDate() - i);
-    date.setHours(0, 0, 0, 0);
-    days.push(date);
-  }
-
-  const getActivityCount = (date: Date): number => {
-    const dateStr = date.toISOString().split('T')[0];
-    return activities.filter(a => {
-      const activityDate = new Date(a.date);
-      activityDate.setHours(0, 0, 0, 0);
-      return activityDate.toISOString().split('T')[0] === dateStr;
-    }).length;
-  };
-
-  const getIntensity = (count: number): string => {
-    if (count === 0) return 'bg-gray-100';
-    if (count === 1) return 'bg-green-200';
-    if (count === 2) return 'bg-green-400';
-    if (count >= 3) return 'bg-green-600';
-    return 'bg-gray-100';
-  };
-
-  const weekDays = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
-  const weeks: Date[][] = [];
-  for (let i = 0; i < days.length; i += 7) {
-    weeks.push(days.slice(i, i + 7));
-  }
-
-  return (
-    <div className="overflow-x-auto">
-      <div className="flex gap-1">
-        <div className="flex flex-col gap-1 pt-6">
-          {weekDays.map(day => (
-            <div key={day} className="h-10 flex items-center text-xs text-gray-500">
-              {day}
-            </div>
-          ))}
-        </div>
-        <div className="flex gap-1">
-          {weeks.map((week, weekIdx) => (
-            <div key={weekIdx} className="flex flex-col gap-1">
-              {week.map((day, dayIdx) => {
-                const count = getActivityCount(day);
-                const isToday = day.toDateString() === today.toDateString();
-                return (
-                  <div
-                    key={`${weekIdx}-${dayIdx}`}
-                    className={`w-10 h-10 rounded ${getIntensity(count)} ${
-                      isToday ? 'ring-2 ring-indigo-500' : ''
-                    } transition-all hover:scale-110 cursor-pointer`}
-                    title={`${day.toLocaleDateString()}: ${count} activity${count !== 1 ? 'ies' : ''}`}
-                  />
-                );
-              })}
-            </div>
-          ))}
-        </div>
-      </div>
-      <div className="flex items-center gap-4 mt-4 text-xs text-gray-600">
-        <span>Less</span>
-        <div className="flex gap-1">
-          <div className="w-3 h-3 rounded bg-gray-100" />
-          <div className="w-3 h-3 rounded bg-green-200" />
-          <div className="w-3 h-3 rounded bg-green-400" />
-          <div className="w-3 h-3 rounded bg-green-600" />
-        </div>
-        <span>More</span>
-      </div>
-    </div>
-  );
-}
 
 export function ProgressSection() {
   const { t } = useLanguage();
@@ -214,11 +135,13 @@ export function ProgressSection() {
             totalActivities: stats.totalActivities,
             averageScore: stats.averageScore,
             streak: stats.streak,
+            lastActivityDate: stats.lastActivityDate ?? undefined,
           },
           skillsData,
           thisWeekActivities.length,
           lastWeekActivities.length,
-          user?.cefrLevel || null
+          user?.cefrLevel || null,
+          getMistakeCountsByTopic()
         );
         setInsight(insightText);
         hasLoadedOnceRef.current = true;
@@ -237,7 +160,7 @@ export function ProgressSection() {
         }
       } catch (error) {
         console.error('Error loading insights:', error);
-        setInsight('Harika ilerleme! Devam etmek için farklı aktivite türlerini deneyebilirsin.');
+        setInsight('Keep up the great work! Try different activity types (quiz, writing, speaking) to broaden your practice.');
         hasLoadedOnceRef.current = true;
       } finally {
         setLoadingInsight(false);
@@ -610,7 +533,7 @@ export function ProgressSection() {
         </motion.div>
       </div>
 
-      {/* Skills Breakdown + Activity Heatmap + Smart Insights */}
+      {/* Skills Breakdown + Activity Type Distribution */}
       <div className="grid lg:grid-cols-3 gap-8 mb-8">
         <motion.div
           initial={{ opacity: 0, y: 20 }}
@@ -701,17 +624,6 @@ export function ProgressSection() {
           </div>
         </motion.div>
       </div>
-
-      {/* Activity Heatmap */}
-      <motion.div
-        initial={{ opacity: 0, y: 20 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ delay: 0.9 }}
-        className="bg-white rounded-2xl p-6 border-2 border-gray-200 shadow-lg mb-8"
-      >
-        <h3 className="text-xl font-bold text-gray-900 mb-6">Learning Activity Heatmap</h3>
-        <ActivityHeatmap activities={activities} />
-      </motion.div>
 
     </div>
   );

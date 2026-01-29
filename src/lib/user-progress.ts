@@ -749,6 +749,86 @@ export const analyzeUserWeaknesses = (): WeaknessAnalysis => {
 };
 
 /**
+ * Mistake count per topic (neyden kaç kez hata yapılmış).
+ * Quiz sorularındaki yanlış cevapları topic bazında sayar; yüzde yok.
+ */
+export interface MistakeCountByTopic {
+  topic: string;
+  mistakeCount: number;
+}
+
+export const getMistakeCountsByTopic = (): MistakeCountByTopic[] => {
+  const quizActivities = getActivitiesByType('quiz');
+  const counts: Record<string, number> = {};
+
+  for (const activity of quizActivities) {
+    const questions = activity.quizQuestions;
+    const userAnswers = activity.quizUserAnswers;
+    if (!questions || !userAnswers || questions.length === 0) continue;
+
+    for (let i = 0; i < questions.length; i++) {
+      const q = questions[i];
+      const userAns = i < userAnswers.length ? userAnswers[i] : null;
+      const correct = q.correctAnswer;
+      const isWrong = userAns !== correct; // null veya yanlış index = hata
+      if (!isWrong) continue;
+
+      const topic = (q.topic || activity.courseTitle || 'General').trim() || 'General';
+      counts[topic] = (counts[topic] ?? 0) + 1;
+    }
+  }
+
+  return Object.entries(counts)
+    .map(([topic, mistakeCount]) => ({ topic, mistakeCount }))
+    .sort((a, b) => b.mistakeCount - a.mistakeCount);
+};
+
+/**
+ * Wrong-answer details for AI analysis (question, explanation, correct/wrong choice).
+ * Used to infer specific weak points (e.g. prepositions, "at", verb tenses).
+ */
+export interface WrongAnswerDetail {
+  question: string;
+  userAnswer: string;
+  correctAnswer: string;
+  explanation: string;
+  topic: string;
+}
+
+export const getWrongAnswerDetails = (limit: number = 24): WrongAnswerDetail[] => {
+  const quizActivities = getActivitiesByType('quiz');
+  const out: WrongAnswerDetail[] = [];
+  const desc = [...quizActivities].sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+
+  for (const activity of desc) {
+    const questions = activity.quizQuestions;
+    const userAnswers = activity.quizUserAnswers;
+    if (!questions || !userAnswers || out.length >= limit) break;
+
+    for (let i = 0; i < questions.length && out.length < limit; i++) {
+      const q = questions[i];
+      const userIdx = i < userAnswers.length ? userAnswers[i] : null;
+      const correctIdx = q.correctAnswer;
+      if (userIdx === correctIdx) continue;
+      const options = q.options || [];
+      const correctText = options[correctIdx] ?? '';
+      const userText = userIdx != null && options[userIdx] != null ? options[userIdx] : '(skipped)';
+      const topic = (q.topic || activity.courseTitle || 'General').trim() || 'General';
+
+      out.push({
+        question: (q.question || '').slice(0, 300),
+        userAnswer: userText.slice(0, 200),
+        correctAnswer: correctText.slice(0, 200),
+        explanation: (q.explanation || '').slice(0, 400),
+        topic,
+      });
+    }
+  }
+
+  return out;
+};
+
+/**
  * Achievement definitions
  */
 export interface Achievement {

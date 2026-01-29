@@ -4,7 +4,7 @@ import { AuthPage } from './components/auth-page';
 import { LandingPage } from './components/landing-page';
 import { AssessmentPlatform } from './components/assessment-platform';
 import { PlacementTest } from './components/placement-test';
-import { getCurrentUser, logout, type User, type UserRole, type CEFRLevel } from './lib/auth';
+import { getCurrentUser, logout, updateUser, type User, type UserRole, type CEFRLevel } from './lib/auth';
 
 export default function App() {
   const [currentPage, setCurrentPage] = useState<'landing' | 'auth' | 'placement' | 'platform'>('landing');
@@ -14,6 +14,12 @@ export default function App() {
     const user = getCurrentUser();
     if (user) {
       setCurrentUser(user);
+      
+      // Öğrenci ise ve placement test tamamlanmamışsa, placement test sayfasına yönlendir
+      if (user.role === 'student' && !user.placementTestCompleted) {
+        setCurrentPage('placement');
+        return;
+      }
     }
 
     // Son ziyaret edilen ana sayfayı (landing/auth/placement/platform) geri yükle
@@ -30,7 +36,12 @@ export default function App() {
         // Kullanıcı yoksa, korumalı sayfalara otomatik gitme
         if (!user && (savedPage === 'placement' || savedPage === 'platform')) {
           setCurrentPage('landing');
-        } else {
+        } 
+        // Öğrenci ise ve placement test tamamlanmamışsa, placement test sayfasına yönlendir
+        else if (user && user.role === 'student' && !user.placementTestCompleted) {
+          setCurrentPage('placement');
+        } 
+        else {
           setCurrentPage(savedPage as any);
         }
       }
@@ -60,16 +71,29 @@ export default function App() {
     const user = getCurrentUser();
     if (user) {
       setCurrentUser(user);
-      // Login'den hemen sonra her zaman dashboard (platform) ekranına git
-      setCurrentPage('platform');
+      
+      // Öğrenci ise ve placement test tamamlanmamışsa, önce placement test sayfasına yönlendir
+      if (role === 'student' && !user.placementTestCompleted) {
+        setCurrentPage('placement');
+      } else {
+        // Diğer durumlarda (instructor, admin veya placement test tamamlanmış öğrenci) platform'a git
+        setCurrentPage('platform');
+      }
     }
   };
 
   const handlePlacementComplete = (cefrLevel: CEFRLevel) => {
     const user = getCurrentUser();
     if (user) {
-      setCurrentUser({ ...user, cefrLevel, placementTestCompleted: true });
+      // Kullanıcı bilgisini localStorage'da güncelle
+      updateUser(user.id, { cefrLevel, placementTestCompleted: true });
+      // State'i de güncelle
+      const updatedUser = getCurrentUser();
+      if (updatedUser) {
+        setCurrentUser(updatedUser);
+      }
     }
+    // Placement test tamamlandıktan sonra platform'a yönlendir
     setCurrentPage('platform');
   };
 

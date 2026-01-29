@@ -3,6 +3,9 @@ export type Lang = 'en' | 'tr';
 const en: Record<string, string> = {
   'nav.dashboard': 'Dashboard',
   'nav.progress': 'Progress',
+  'nav.studyPlan': 'Study Plan',
+  'nav.homework': 'Homework',
+  'nav.dictionary': 'Dictionary',
   'nav.speaking': 'Speaking',
   'nav.listening': 'Listening',
   'nav.writing': 'Writing',
@@ -48,12 +51,22 @@ const en: Record<string, string> = {
   'dashboard.basedOnPerformance': 'Based on your recent performance',
   'dashboard.recentActivity': 'Recent Activity',
   'dashboard.noActivities': 'No activities yet. Start learning to see your progress!',
+  'dashboard.yesterday': 'Yesterday',
   'dashboard.highPriority': 'High Priority',
   'dashboard.recommended': 'Recommended',
   'dashboard.optional': 'Optional',
   'dashboard.proTip': 'Pro tip: Focus on high-priority areas first for maximum improvement!',
   'dashboard.score': 'Score',
   'dashboard.loadingRecs': 'Loading personalized recommendations...',
+  'dashboard.learningDifficultyTitle': 'Detected topic & AI advice',
+  'dashboard.detectedTopicLabel': 'Detected topic',
+  'dashboard.aiAdviceLabel': 'AI advice',
+  'dashboard.noTopic': 'None at the moment',
+  'dashboard.loadingDifficulty': 'Analysing your progress…',
+  'dashboard.noDifficultyData': 'Complete activities to see detected topic and AI advice.',
+  'dashboard.commonMistakes': 'Common mistakes',
+  'dashboard.noCommonMistakesData': 'Complete activities to see your common mistakes.',
+  'dashboard.mistakesSuffix': 'mistakes',
 
   'progress.title': 'Your Progress',
   'progress.lessonsCompleted': 'Lessons Completed',
@@ -142,11 +155,17 @@ const en: Record<string, string> = {
   'auth.name': 'Name',
   'auth.getStarted': 'Get Started',
   'auth.back': 'Back',
+
+  'listening.recommendedHint': 'Your recommended level: {level}. You can practice any level—choose a level above, then pick a listening.',
+  'listening.anyLevelHint': 'Choose any level (A1–C2); each level has several listenings.',
 };
 
 const tr: Record<string, string> = {
   'nav.dashboard': 'Kontrol Paneli',
   'nav.progress': 'İlerleme',
+  'nav.studyPlan': 'Çalışma Planı',
+  'nav.homework': 'Ödev',
+  'nav.dictionary': 'Sözlük',
   'nav.speaking': 'Konuşma',
   'nav.listening': 'Dinleme',
   'nav.writing': 'Yazma',
@@ -192,12 +211,22 @@ const tr: Record<string, string> = {
   'dashboard.basedOnPerformance': 'Son performansınıza göre',
   'dashboard.recentActivity': 'Son Aktiviteler',
   'dashboard.noActivities': 'Henüz aktivite yok. İlerleme görmek için öğrenmeye başlayın!',
+  'dashboard.yesterday': 'Dün',
   'dashboard.highPriority': 'Yüksek Öncelik',
   'dashboard.recommended': 'Önerilen',
   'dashboard.optional': 'İsteğe bağlı',
   'dashboard.proTip': 'İpucu: Maksimum gelişim için önce yüksek öncelikli alanlara odaklanın!',
   'dashboard.score': 'Puan',
   'dashboard.loadingRecs': 'Kişiselleştirilmiş öneriler yükleniyor...',
+  'dashboard.learningDifficultyTitle': 'Tespit edilen konu & AI tavsiyesi',
+  'dashboard.detectedTopicLabel': 'Tespit edilen konu',
+  'dashboard.aiAdviceLabel': 'AI tavsiyesi',
+  'dashboard.noTopic': 'Şu anda yok',
+  'dashboard.loadingDifficulty': 'İlerlemen analiz ediliyor…',
+  'dashboard.noDifficultyData': 'Tespit edilen konu ve AI tavsiyesi görmek için aktiviteleri tamamla.',
+  'dashboard.commonMistakes': 'Sık yapılan hatalar',
+  'dashboard.noCommonMistakesData': 'Sık yapılan hataları görmek için aktiviteleri tamamla.',
+  'dashboard.mistakesSuffix': 'hata',
 
   'progress.title': 'İlerlemeniz',
   'progress.lessonsCompleted': 'Tamamlanan ders',
@@ -286,6 +315,9 @@ const tr: Record<string, string> = {
   'auth.name': 'Ad',
   'auth.getStarted': 'Başla',
   'auth.back': 'Geri',
+
+  'listening.recommendedHint': 'Önerilen seviyeniz: {level}. İstediğiniz seviyeyi çalışabilirsiniz—üstte bir seviye seçin, sonra bir dinleme seçin.',
+  'listening.anyLevelHint': 'Herhangi bir seviye seçin (A1–C2); her seviyede birden fazla dinleme vardır.',
 };
 
 const maps: Record<Lang, Record<string, string>> = { en, tr };

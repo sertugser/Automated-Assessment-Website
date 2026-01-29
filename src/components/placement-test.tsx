@@ -12,7 +12,7 @@ import {
   ArrowLeft,
 } from 'lucide-react';
 import logo from '../assets/fbaa49f59eaf54473f226d88f4a207918ca971f2.png';
-import { generatePlacementQuestions, getDefaultPlacementQuestions, scoreToCEFR, type CEFRLevel } from '../lib/ai-services';
+import { generatePlacementQuestions, getDefaultPlacementQuestions, scoreToCEFR, calculateWeightedScore, type CEFRLevel } from '../lib/ai-services';
 import { updateUser, getCurrentUser, type User } from '../lib/auth';
 import { toast } from 'sonner';
 
@@ -40,6 +40,8 @@ interface Question {
   correctAnswer: number;
   explanation: string;
   topic: string;
+  cefrLevel: CEFRLevel;
+  weight: number;
 }
 
 const PLACEMENT_COUNT = 18;
@@ -50,7 +52,6 @@ export function PlacementTest({ user, onComplete, onBack, isRetake }: PlacementT
   const [started, setStarted] = useState(false);
   const [currentQuestion, setCurrentQuestion] = useState(0);
   const [selectedAnswer, setSelectedAnswer] = useState<number | null>(null);
-  const [showFeedback, setShowFeedback] = useState(false);
   const [answers, setAnswers] = useState<(boolean | null)[]>([]); // Track correct/incorrect for each question
   const [selections, setSelections] = useState<(number | null)[]>([]); // Track selected answers for each question
   const [timeElapsed, setTimeElapsed] = useState(0);
@@ -98,27 +99,13 @@ export function PlacementTest({ user, onComplete, onBack, isRetake }: PlacementT
   const progress = questions.length ? ((currentQuestion + 1) / questions.length) * 100 : 0;
 
   const handleAnswerSelect = (index: number) => {
-    if (!showFeedback) {
-      setSelectedAnswer(index);
-      // Update selections array for current question
-      setSelections((s) => {
-        const newSelections = [...s];
-        newSelections[currentQuestion] = index;
-        return newSelections;
-      });
-    }
-  };
-
-  const handleSubmitAnswer = () => {
-    if (selectedAnswer === null || !currentQ) return;
-    const isCorrect = selectedAnswer === currentQ.correctAnswer;
-    // Update answers array for current question
-    setAnswers((a) => {
-      const newAnswers = [...a];
-      newAnswers[currentQuestion] = isCorrect;
-      return newAnswers;
+    setSelectedAnswer(index);
+    // Update selections array for current question
+    setSelections((s) => {
+      const newSelections = [...s];
+      newSelections[currentQuestion] = index;
+      return newSelections;
     });
-    setShowFeedback(true);
   };
 
   const handlePrevious = () => {
@@ -126,27 +113,35 @@ export function PlacementTest({ user, onComplete, onBack, isRetake }: PlacementT
       const prevIndex = currentQuestion - 1;
       setCurrentQuestion(prevIndex);
       setSelectedAnswer(selections[prevIndex] ?? null);
-      setShowFeedback(answers[prevIndex] !== null && answers[prevIndex] !== undefined);
     }
   };
 
   const handleNext = () => {
     if (!currentQ) return;
+    
+    // Save current answer if selected
+    if (selectedAnswer !== null) {
+      const isCorrect = selectedAnswer === currentQ.correctAnswer;
+      setAnswers((a) => {
+        const newAnswers = [...a];
+        newAnswers[currentQuestion] = isCorrect;
+        return newAnswers;
+      });
+    }
+    
     if (currentQuestion < questions.length - 1) {
       const nextIndex = currentQuestion + 1;
       setCurrentQuestion(nextIndex);
       setSelectedAnswer(selections[nextIndex] ?? null);
-      setShowFeedback(answers[nextIndex] !== null && answers[nextIndex] !== undefined);
     } else {
-      // Last question - calculate final score
+      // Last question - calculate final weighted score
       // Make sure last answer is included
       const finalAnswers = [...answers];
       if (selectedAnswer !== null && finalAnswers[currentQuestion] === null) {
         finalAnswers[currentQuestion] = selectedAnswer === currentQ.correctAnswer;
       }
-      const correctCount = finalAnswers.filter((a): a is boolean => a === true).length;
-      const total = questions.length;
-      const score = total ? Math.round((correctCount / total) * 100) : 0;
+      // Use weighted scoring instead of simple percentage
+      const score = calculateWeightedScore(questions, finalAnswers);
       const cefr = scoreToCEFR(score);
       setResult({ score, cefr });
       setFinished(true);
@@ -309,33 +304,187 @@ export function PlacementTest({ user, onComplete, onBack, isRetake }: PlacementT
   }
 
   if (finished && result) {
+    const correctCount = answers.filter((a): a is boolean => a === true).length;
+    const wrongCount = answers.filter((a): a is boolean => a === false).length;
+    
+    // Calculate level-specific performance
+    const levelStats: Record<CEFRLevel, { correct: number; total: number }> = {
+      A1: { correct: 0, total: 0 },
+      A2: { correct: 0, total: 0 },
+      B1: { correct: 0, total: 0 },
+      B2: { correct: 0, total: 0 },
+      C1: { correct: 0, total: 0 },
+      C2: { correct: 0, total: 0 },
+    };
+    
+    questions.forEach((q, index) => {
+      levelStats[q.cefrLevel].total++;
+      if (answers[index] === true) {
+        levelStats[q.cefrLevel].correct++;
+      }
+    });
+    
     return (
-      <div className="min-h-screen bg-gradient-to-br from-indigo-50 via-purple-50 to-pink-50 flex items-center justify-center p-4 relative overflow-hidden">
+      <div className="min-h-screen bg-gradient-to-br from-indigo-50 via-purple-50 to-pink-50 py-8 px-4 relative overflow-hidden">
         <div className="absolute inset-0 overflow-hidden pointer-events-none">
           <div className="absolute -top-40 -right-40 w-80 h-80 bg-purple-300 rounded-full mix-blend-multiply filter blur-xl opacity-70 animate-blob" />
           <div className="absolute -bottom-40 -left-40 w-80 h-80 bg-indigo-300 rounded-full mix-blend-multiply filter blur-xl opacity-70 animate-blob animation-delay-2000" />
           <div className="absolute top-40 left-40 w-80 h-80 bg-pink-300 rounded-full mix-blend-multiply filter blur-xl opacity-70 animate-blob animation-delay-4000" />
         </div>
-        <motion.div
-          initial={{ opacity: 0, scale: 0.95 }}
-          animate={{ opacity: 1, scale: 1 }}
-          className="relative bg-white/95 backdrop-blur-sm rounded-3xl shadow-2xl p-8 max-w-md w-full text-center border border-white/50"
-        >
-          <div className="p-4 bg-indigo-100 rounded-2xl inline-flex mb-6">
-            <Trophy className="w-12 h-12 text-indigo-600" />
-          </div>
-          <h2 className="text-2xl font-bold text-gray-900 mb-2">Your English level</h2>
-          <p className="text-4xl font-bold text-indigo-600 mb-1">{result.cefr}</p>
-          <p className="text-gray-600 mb-2">{CEFR_LABELS[result.cefr]}</p>
-          <p className="text-sm text-gray-500 mb-6">Score: {result.score}%</p>
-          <button
-            onClick={handleContinue}
-            className="w-full flex items-center justify-center gap-2 px-6 py-4 bg-gradient-to-r from-indigo-600 to-purple-600 text-white rounded-xl font-semibold hover:shadow-lg hover:shadow-indigo-200 transition-all"
+        
+        <div className="max-w-4xl mx-auto relative">
+          {/* Result Summary Card */}
+          <motion.div
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            className="bg-white/95 backdrop-blur-sm rounded-3xl shadow-2xl p-8 mb-6 border border-white/50"
           >
-            {isRetake ? 'Back to dashboard' : 'Continue to dashboard'}
-            <ArrowRight className="w-5 h-5" />
-          </button>
-        </motion.div>
+            <div className="text-center mb-8">
+              <div className="p-4 bg-indigo-100 rounded-2xl inline-flex mb-6">
+                <Trophy className="w-12 h-12 text-indigo-600" />
+              </div>
+              <h2 className="text-3xl font-bold text-gray-900 mb-3">Test Tamamlandı!</h2>
+              <p className="text-5xl font-bold text-indigo-600 mb-2">{result.cefr}</p>
+              <p className="text-xl text-gray-600 mb-4">{CEFR_LABELS[result.cefr]}</p>
+              <div className="flex items-center justify-center gap-6 text-sm mb-4">
+                <div className="flex items-center gap-2">
+                  <CheckCircle className="w-5 h-5 text-green-600" />
+                  <span className="text-gray-700"><strong>{correctCount}</strong> Doğru</span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <XCircle className="w-5 h-5 text-red-600" />
+                  <span className="text-gray-700"><strong>{wrongCount}</strong> Yanlış</span>
+                </div>
+                <div className="text-gray-700">
+                  <strong>Ağırlıklı Skor:</strong> {result.score}%
+                </div>
+              </div>
+              
+              {/* Level Performance Breakdown */}
+              <div className="mt-6 p-4 bg-gray-50 rounded-xl">
+                <h4 className="text-sm font-semibold text-gray-700 mb-3">Seviye Bazlı Performans:</h4>
+                <div className="grid grid-cols-2 md:grid-cols-3 gap-3 text-xs">
+                  {(Object.keys(levelStats) as CEFRLevel[]).map(level => {
+                    const stats = levelStats[level];
+                    const percentage = stats.total > 0 ? Math.round((stats.correct / stats.total) * 100) : 0;
+                    return (
+                      <div key={level} className="flex items-center justify-between p-2 bg-white rounded-lg">
+                        <span className="font-medium text-gray-700">{level}:</span>
+                        <span className={`font-semibold ${percentage >= 50 ? 'text-green-600' : 'text-red-600'}`}>
+                          {stats.correct}/{stats.total} ({percentage}%)
+                        </span>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            </div>
+          </motion.div>
+
+          {/* Questions Review */}
+          <motion.div
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ delay: 0.2 }}
+            className="bg-white/95 backdrop-blur-sm rounded-3xl shadow-2xl p-8 border border-white/50 mb-6"
+          >
+            <h3 className="text-2xl font-bold text-gray-900 mb-6">Sorular ve Cevaplar</h3>
+            <div className="space-y-6 max-h-[600px] overflow-y-auto pr-2">
+              {questions.map((q, index) => {
+                const userAnswer = selections[index];
+                const isCorrect = answers[index] === true;
+                const userSelected = userAnswer !== null && userAnswer !== undefined;
+                
+                return (
+                  <div
+                    key={q.id}
+                    className={`p-6 rounded-xl border-2 ${
+                      isCorrect ? 'border-green-200 bg-green-50' : 'border-red-200 bg-red-50'
+                    }`}
+                  >
+                    <div className="flex items-start justify-between mb-4">
+                      <div className="flex items-center gap-3 flex-wrap">
+                        <span className="text-sm font-semibold text-gray-600">Soru {index + 1}</span>
+                        <span className="px-2 py-1 bg-indigo-100 text-indigo-700 rounded-full text-xs font-medium">
+                          {q.topic}
+                        </span>
+                        <span className={`px-2 py-1 rounded-full text-xs font-semibold ${
+                          q.cefrLevel === 'A1' ? 'bg-blue-100 text-blue-700' :
+                          q.cefrLevel === 'A2' ? 'bg-green-100 text-green-700' :
+                          q.cefrLevel === 'B1' ? 'bg-yellow-100 text-yellow-700' :
+                          q.cefrLevel === 'B2' ? 'bg-orange-100 text-orange-700' :
+                          q.cefrLevel === 'C1' ? 'bg-purple-100 text-purple-700' :
+                          'bg-red-100 text-red-700'
+                        }`}>
+                          {q.cefrLevel} (Ağırlık: {q.weight})
+                        </span>
+                        {isCorrect ? (
+                          <CheckCircle className="w-5 h-5 text-green-600" />
+                        ) : (
+                          <XCircle className="w-5 h-5 text-red-600" />
+                        )}
+                      </div>
+                    </div>
+                    
+                    <h4 className="text-lg font-semibold text-gray-900 mb-4">{q.question}</h4>
+                    
+                    <div className="space-y-2 mb-4">
+                      {q.options.map((opt, i) => {
+                        const isUserAnswer = userSelected && userAnswer === i;
+                        const isCorrectAnswer = i === q.correctAnswer;
+                        
+                        return (
+                          <div
+                            key={i}
+                            className={`p-3 rounded-lg border-2 flex items-center justify-between ${
+                              isCorrectAnswer
+                                ? 'border-green-500 bg-green-100'
+                                : isUserAnswer && !isCorrectAnswer
+                                ? 'border-red-500 bg-red-100'
+                                : 'border-gray-200 bg-white'
+                            }`}
+                          >
+                            <span className={isCorrectAnswer ? 'font-semibold text-green-900' : isUserAnswer ? 'font-semibold text-red-900' : 'text-gray-700'}>
+                              {opt}
+                            </span>
+                            <div className="flex items-center gap-2">
+                              {isCorrectAnswer && <span className="text-xs font-semibold text-green-700">Doğru Cevap</span>}
+                              {isUserAnswer && !isCorrectAnswer && <span className="text-xs font-semibold text-red-700">Sizin Cevabınız</span>}
+                              {isCorrectAnswer && <CheckCircle className="w-4 h-4 text-green-600" />}
+                              {isUserAnswer && !isCorrectAnswer && <XCircle className="w-4 h-4 text-red-600" />}
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                    
+                    <div className="p-4 bg-gray-50 rounded-lg">
+                      <p className="text-sm text-gray-700">
+                        <strong className="text-gray-900">Açıklama:</strong> {q.explanation}
+                      </p>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </motion.div>
+
+          {/* Continue Button */}
+          <motion.div
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ delay: 0.4 }}
+            className="text-center"
+          >
+            <button
+              onClick={handleContinue}
+              className="inline-flex items-center gap-2 px-8 py-4 bg-gradient-to-r from-indigo-600 to-purple-600 text-white rounded-xl font-semibold hover:shadow-lg hover:shadow-indigo-200 transition-all text-lg"
+            >
+              {isRetake ? 'Dashboard\'a Dön' : 'Devam Et'}
+              <ArrowRight className="w-5 h-5" />
+            </button>
+          </motion.div>
+        </div>
       </div>
     );
   }
@@ -381,34 +530,23 @@ export function PlacementTest({ user, onComplete, onBack, isRetake }: PlacementT
             <div className="space-y-3 mb-6">
               {currentQ.options.map((opt, i) => {
                 const isSelected = selectedAnswer === i;
-                const isCorrect = i === currentQ.correctAnswer;
-                const showCorrect = showFeedback && isCorrect;
-                const showWrong = showFeedback && isSelected && !isCorrect;
                 return (
                   <motion.button
                     key={i}
                     onClick={() => handleAnswerSelect(i)}
-                    disabled={showFeedback}
-                    whileHover={showFeedback ? undefined : { scale: 1.01 }}
-                    whileTap={showFeedback ? undefined : { scale: 0.99 }}
-                    className={`w-full p-4 rounded-xl border-2 text-left flex items-center justify-between transition-all
-                      ${showCorrect ? 'border-green-500 bg-green-50' : ''}
-                      ${showWrong ? 'border-red-500 bg-red-50' : ''}
-                      ${isSelected && !showFeedback ? 'border-indigo-600 bg-indigo-50' : ''}
-                      ${!isSelected && !showFeedback && !showCorrect ? 'border-gray-200 hover:border-indigo-300 bg-white' : ''}
-                      ${showFeedback && !showCorrect && !showWrong ? 'border-gray-200 bg-gray-50 opacity-60' : ''}
-                    `}
+                    whileHover={{ scale: 1.01 }}
+                    whileTap={{ scale: 0.99 }}
+                    className={`w-full p-4 rounded-xl border-2 text-left transition-all ${
+                      isSelected
+                        ? 'border-indigo-600 bg-indigo-50'
+                        : 'border-gray-200 hover:border-indigo-300 bg-white'
+                    }`}
                   >
                     <span>{opt}</span>
-                    {showCorrect && <CheckCircle className="w-5 h-5 text-green-600 flex-shrink-0" />}
-                    {showWrong && <XCircle className="w-5 h-5 text-red-600 flex-shrink-0" />}
                   </motion.button>
                 );
               })}
             </div>
-            {showFeedback && (
-              <p className="text-sm text-gray-600 mb-6 p-3 bg-gray-50 rounded-lg">{currentQ.explanation}</p>
-            )}
             <div className="flex justify-between gap-2">
               <div>
                 {currentQuestion > 0 && (
@@ -417,28 +555,19 @@ export function PlacementTest({ user, onComplete, onBack, isRetake }: PlacementT
                     className="flex items-center gap-2 px-6 py-3 border-2 border-indigo-200 text-indigo-700 rounded-xl font-semibold hover:bg-indigo-50 transition-all"
                   >
                     <ArrowLeft className="w-5 h-5" />
-                    Previous
+                    Önceki
                   </button>
                 )}
               </div>
               <div className="flex gap-2">
-                {!showFeedback ? (
-                  <button
-                    onClick={handleSubmitAnswer}
-                    disabled={selectedAnswer === null}
-                    className="px-6 py-3 bg-indigo-600 text-white rounded-xl font-semibold disabled:opacity-50 disabled:cursor-not-allowed hover:bg-indigo-700"
-                  >
-                    Submit answer
-                  </button>
-                ) : (
-                  <button
-                    onClick={handleNext}
-                    className="flex items-center gap-2 px-6 py-3 bg-indigo-600 text-white rounded-xl font-semibold hover:bg-indigo-700"
-                  >
-                    {currentQuestion < questions.length - 1 ? 'Next' : 'See result'}
-                    <ChevronRight className="w-5 h-5" />
-                  </button>
-                )}
+                <button
+                  onClick={handleNext}
+                  disabled={selectedAnswer === null}
+                  className="flex items-center gap-2 px-6 py-3 bg-indigo-600 text-white rounded-xl font-semibold disabled:opacity-50 disabled:cursor-not-allowed hover:bg-indigo-700"
+                >
+                  {currentQuestion < questions.length - 1 ? 'Sonraki' : 'Testi Bitir'}
+                  <ChevronRight className="w-5 h-5" />
+                </button>
               </div>
             </div>
           </motion.div>
@@ -447,10 +576,8 @@ export function PlacementTest({ user, onComplete, onBack, isRetake }: PlacementT
         {/* Question Navigation - Clickable question numbers */}
         <div className="mt-6 flex flex-wrap gap-2 justify-center">
           {questions.map((_, index) => {
-            const answered = answers[index] !== null && answers[index] !== undefined;
+            const answered = selections[index] !== null && selections[index] !== undefined;
             const isCurrent = index === currentQuestion;
-            const correct = answered && answers[index] === true;
-            const wrong = answered && answers[index] === false;
             return (
               <button
                 key={index}
@@ -459,14 +586,13 @@ export function PlacementTest({ user, onComplete, onBack, isRetake }: PlacementT
                   if (index !== currentQuestion) {
                     setCurrentQuestion(index);
                     setSelectedAnswer(selections[index] ?? null);
-                    setShowFeedback(answers[index] !== null && answers[index] !== undefined);
                   }
                 }}
                 className={`
                   w-10 h-10 rounded-lg flex items-center justify-center font-semibold text-sm transition-all
                   shrink-0
                   ${isCurrent ? 'bg-indigo-600 text-white ring-4 ring-indigo-200' : ''}
-                  ${answered && !isCurrent ? (correct ? 'bg-green-500 text-white hover:bg-green-600' : 'bg-red-500 text-white hover:bg-red-600') : ''}
+                  ${answered && !isCurrent ? 'bg-indigo-100 text-indigo-700 hover:bg-indigo-200' : ''}
                   ${!answered && !isCurrent ? 'bg-gray-200 text-gray-500 hover:bg-gray-300' : ''}
                 `}
               >

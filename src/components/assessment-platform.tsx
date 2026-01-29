@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import { 
   ArrowLeft, Trophy, Zap, Target, User, LogOut, Home, 
   BarChart3, Mic, Edit, Brain, BookOpen, MessageSquare, Headphones,
-  FileText, Briefcase, GraduationCap
+  FileText, Briefcase, GraduationCap, ChevronDown, BookMarked
 } from 'lucide-react';
 import { ModernDashboard } from './modern-dashboard';
 import { ProgressSection } from './progress-section';
@@ -16,9 +16,10 @@ import { PlacementTest } from './placement-test';
 import { QuizInterface } from './quiz-interface';
 import { ResultsScreen } from './results-screen';
 import { ProfilePage } from './profile-page';
+import { DictionarySection } from './dictionary-section';
 import { type User as UserType, updateUser, getCurrentUser } from '../lib/auth';
-import { getUserStats, getRecentActivities, saveActivity, analyzeUserWeaknesses, getActivitiesByType, type UserActivity } from '../lib/user-progress';
-import { generatePersonalizedRecommendations } from '../lib/ai-services';
+import { getUserStats, getRecentActivities, saveActivity, analyzeUserWeaknesses, getMistakeCountsByTopic, getWrongAnswerDetails, getActivitiesByType, type UserActivity } from '../lib/user-progress';
+import { generatePersonalizedRecommendations, getLearningDifficultyAnalysis, type LearningDifficultyAnalysis } from '../lib/ai-services';
 import { useLanguage } from '../contexts/LanguageContext';
 import logo from '../assets/fbaa49f59eaf54473f226d88f4a207918ca971f2.png';
 
@@ -37,7 +38,7 @@ interface Recommendation {
   color: string;
 }
 
-export type Screen = 'dashboard' | 'progress' | 'speaking' | 'listening' | 'writing' | 'quiz' | 'placement' | 'course-quiz' | 'results' | 'profile' | 'quiz-history' | 'quiz-detail';
+export type Screen = 'dashboard' | 'progress' | 'speaking' | 'listening' | 'writing' | 'quiz' | 'homework' | 'dictionary' | 'placement' | 'course-quiz' | 'results' | 'profile' | 'quiz-history' | 'quiz-detail';
 
 export interface QuizResult {
   score: number;
@@ -82,16 +83,20 @@ export function AssessmentPlatform({ onBack, user }: AssessmentPlatformProps) {
   const [currentUser, setCurrentUser] = useState<UserType | null>(user);
   const [recommendations, setRecommendations] = useState<Recommendation[]>([]);
   const [loadingRecommendations, setLoadingRecommendations] = useState(true);
+  const [learningDifficulty, setLearningDifficulty] = useState<LearningDifficultyAnalysis | null>(null);
+  const [loadingDifficulty, setLoadingDifficulty] = useState(true);
   const [initialSpeakingActivityId, setInitialSpeakingActivityId] = useState<string | null>(null);
   const [initialWritingActivityId, setInitialWritingActivityId] = useState<string | null>(null);
   const [initialQuizActivityId, setInitialQuizActivityId] = useState<string | null>(null);
   const [selectedQuizId, setSelectedQuizId] = useState<string | null>(null);
+  const [studyPlanHovered, setStudyPlanHovered] = useState(false);
+  const [difficultyRefreshTrigger, setDifficultyRefreshTrigger] = useState(0);
 
   // Persist last visited screen so refresh returns the user to the same tab
   useEffect(() => {
     const saved = localStorage.getItem('assessai_current_screen') as Screen | null;
     if (saved && typeof saved === 'string') {
-      const allowed: Screen[] = ['dashboard', 'progress', 'speaking', 'listening', 'writing', 'quiz', 'quiz-history', 'profile'];
+      const allowed: Screen[] = ['dashboard', 'progress', 'speaking', 'listening', 'writing', 'quiz', 'homework', 'dictionary', 'quiz-history', 'profile'];
       if (allowed.includes(saved)) {
         setCurrentScreen(saved);
         setScreenHistory([saved]);
@@ -103,7 +108,7 @@ export function AssessmentPlatform({ onBack, user }: AssessmentPlatformProps) {
     localStorage.setItem('assessai_current_screen', currentScreen);
   }, [currentScreen]);
 
-  // Load AI-generated recommendations
+  // Load AI-generated recommendations and learning difficulty analysis
   useEffect(() => {
     const loadRecommendations = async () => {
       setLoadingRecommendations(true);
@@ -154,15 +159,53 @@ export function AssessmentPlatform({ onBack, user }: AssessmentPlatformProps) {
       }
     };
 
+    const loadDifficultyAnalysis = async () => {
+      setLoadingDifficulty(true);
+      try {
+        const stats = getUserStats();
+        const recentActivities = getRecentActivities(10);
+        const weaknessAnalysis = analyzeUserWeaknesses();
+        const mistakeCounts = getMistakeCountsByTopic();
+        const wrongAnswerDetails = getWrongAnswerDetails(20);
+        const analysis = await getLearningDifficultyAnalysis(
+          {
+            streak: stats.streak,
+            totalPoints: stats.totalPoints,
+            averageScore: stats.averageScore,
+            totalActivities: stats.totalActivities,
+            cefrLevel: currentUser?.cefrLevel ?? null,
+          },
+          recentActivities.map(a => ({
+            type: a.type,
+            score: a.score,
+            courseTitle: a.courseTitle,
+          })),
+          weaknessAnalysis,
+          mistakeCounts,
+          wrongAnswerDetails
+        );
+        setLearningDifficulty(analysis);
+      } catch (error) {
+        console.error('Error loading learning difficulty analysis:', error);
+        setLearningDifficulty(null);
+      } finally {
+        setLoadingDifficulty(false);
+      }
+    };
+
     loadRecommendations();
+    loadDifficultyAnalysis();
     
-    // Refresh recommendations when screen or CEFR changes
+    // Refresh recommendations and difficulty analysis when on dashboard
     const interval = setInterval(() => {
-      if (currentScreen === 'dashboard') loadRecommendations();
+      if (currentScreen === 'dashboard') {
+        loadRecommendations();
+        loadDifficultyAnalysis();
+      }
     }, 30000);
     
     return () => clearInterval(interval);
-  }, [currentScreen, currentUser?.cefrLevel]);
+  }, [currentScreen, currentUser?.cefrLevel, difficultyRefreshTrigger]);
 
   const generateRecommendationsFromQuiz = (results: QuizResult) => {
     const newRecs: Recommendation[] = [];
@@ -277,6 +320,7 @@ export function AssessmentPlatform({ onBack, user }: AssessmentPlatformProps) {
         quizReadingPassage: results.readingPassage,
         quizFeedback: feedback,
       });
+      setDifficultyRefreshTrigger(prev => prev + 1);
       const newRecs = generateRecommendationsFromQuiz(results);
       if (newRecs.length > 0) {
         setRecommendations(prev => {
@@ -336,35 +380,116 @@ export function AssessmentPlatform({ onBack, user }: AssessmentPlatformProps) {
                   <ArrowLeft className="w-5 h-5 text-gray-600" />
                 </button>
               )}
-              <div className="flex items-center gap-2">
-                <span className="text-xl font-bold text-gray-900">AssessAI</span>
-              </div>
-              
-              {/* Navigation Tabs - Only show when not in course-quiz or results */}
-              {!['course-quiz', 'results', 'profile', 'placement'].includes(currentScreen) && (
+              <button
+                type="button"
+                onClick={() => navigateToScreen('dashboard')}
+                className="text-xl font-bold text-gray-900 hover:text-purple-600 transition-colors"
+              >
+                AssessAI
+              </button>
+
+              {/* Navigation Tabs - Only hide on quiz, results, placement */}
+              {!['course-quiz', 'results', 'placement'].includes(currentScreen) && (
                 <nav className="flex items-center justify-center flex-1 ml-6">
-                  <div className="flex items-center w-full max-w-3xl">
-                  {[
-                    { id: 'dashboard', label: t('nav.dashboard'), icon: Home },
-                    { id: 'progress', label: t('nav.progress'), icon: BarChart3 },
-                    { id: 'speaking', label: t('nav.speaking'), icon: Mic },
-                    { id: 'listening', label: t('nav.listening'), icon: Headphones },
-                    { id: 'writing', label: t('nav.writing'), icon: Edit },
-                    { id: 'quiz', label: t('nav.quiz'), icon: Brain }
-                  ].map((tab) => (
+                  <div className="flex items-center w-full max-w-4xl gap-0">
+                    {/* Dashboard */}
                     <button
-                      key={tab.id}
-                      onClick={() => navigateToScreen(tab.id as Screen)}
-                      className={`flex flex-1 items-center justify-center gap-2 px-4 py-3 font-medium transition-all relative rounded-lg ${
-                        currentScreen === tab.id
+                      onClick={() => navigateToScreen('dashboard')}
+                      className={`flex flex-1 items-center justify-center gap-1 px-2.5 py-2 text-sm font-medium transition-all relative rounded-lg ${
+                        currentScreen === 'dashboard'
                           ? 'text-purple-700 bg-purple-100'
                           : 'text-gray-600 hover:text-gray-900 hover:bg-gray-50'
                       }`}
                     >
-                      <tab.icon className="w-5 h-5" />
-                      <span>{tab.label}</span>
+                      <Home className="w-4 h-4" />
+                      <span>{t('nav.dashboard')}</span>
                     </button>
-                  ))}
+
+                    {/* Progress */}
+                    <button
+                      onClick={() => navigateToScreen('progress')}
+                      className={`flex flex-1 items-center justify-center gap-1 px-2.5 py-2 text-sm font-medium transition-all relative rounded-lg ${
+                        currentScreen === 'progress'
+                          ? 'text-purple-700 bg-purple-100'
+                          : 'text-gray-600 hover:text-gray-900 hover:bg-gray-50'
+                      }`}
+                    >
+                      <BarChart3 className="w-4 h-4" />
+                      <span>{t('nav.progress')}</span>
+                    </button>
+
+                    {/* Study Plan Dropdown */}
+                    <div
+                      className="relative flex flex-1"
+                      onMouseEnter={() => setStudyPlanHovered(true)}
+                      onMouseLeave={() => setStudyPlanHovered(false)}
+                    >
+                      <button
+                        className={`flex flex-1 items-center justify-center gap-1 px-2.5 py-2 text-sm font-medium transition-all relative rounded-lg ${
+                          ['speaking', 'listening', 'writing', 'quiz'].includes(currentScreen)
+                            ? 'text-purple-700 bg-purple-100'
+                            : 'text-gray-600 hover:text-gray-900 hover:bg-gray-50'
+                        }`}
+                      >
+                        <BookOpen className="w-4 h-4" />
+                        <span>{t('nav.studyPlan')}</span>
+                        <ChevronDown className={`w-3.5 h-3.5 transition-transform ${studyPlanHovered ? 'rotate-180' : ''}`} />
+                      </button>
+
+                      {/* Dropdown Menu */}
+                      {studyPlanHovered && (
+                        <div className="absolute top-full left-0 mt-1 w-full bg-white rounded-lg shadow-lg border border-gray-200 py-2 z-50">
+                          {[
+                            { id: 'speaking', label: t('nav.speaking'), icon: Mic },
+                            { id: 'listening', label: t('nav.listening'), icon: Headphones },
+                            { id: 'writing', label: t('nav.writing'), icon: Edit },
+                            { id: 'quiz', label: t('nav.quiz'), icon: Brain }
+                          ].map((item) => (
+                            <button
+                              key={item.id}
+                              onClick={() => {
+                                navigateToScreen(item.id as Screen);
+                                setStudyPlanHovered(false);
+                              }}
+                              className={`w-full flex items-center gap-2.5 px-3 py-2 text-sm text-left transition-colors ${
+                                currentScreen === item.id
+                                  ? 'bg-purple-50 text-purple-700'
+                                  : 'text-gray-700 hover:bg-gray-50'
+                              }`}
+                            >
+                              <item.icon className="w-4 h-4" />
+                              <span>{item.label}</span>
+                            </button>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Homework */}
+                    <button
+                      onClick={() => navigateToScreen('homework')}
+                      className={`flex flex-1 items-center justify-center gap-1 px-2.5 py-2 text-sm font-medium transition-all relative rounded-lg ${
+                        currentScreen === 'homework'
+                          ? 'text-purple-700 bg-purple-100'
+                          : 'text-gray-600 hover:text-gray-900 hover:bg-gray-50'
+                      }`}
+                    >
+                      <FileText className="w-4 h-4" />
+                      <span>{t('nav.homework')}</span>
+                    </button>
+
+                    {/* Dictionary */}
+                    <button
+                      onClick={() => navigateToScreen('dictionary')}
+                      className={`flex flex-1 items-center justify-center gap-1 px-2.5 py-2 text-sm font-medium transition-all relative rounded-lg ${
+                        currentScreen === 'dictionary'
+                          ? 'text-purple-700 bg-purple-100'
+                          : 'text-gray-600 hover:text-gray-900 hover:bg-gray-50'
+                      }`}
+                    >
+                      <BookMarked className="w-4 h-4" />
+                      <span>{t('nav.dictionary')}</span>
+                    </button>
                   </div>
                 </nav>
               )}
@@ -376,15 +501,15 @@ export function AssessmentPlatform({ onBack, user }: AssessmentPlatformProps) {
               <button
                 onClick={() => navigateToScreen('profile')}
                 className={`p-2 rounded-lg transition-all ${
-                  currentScreen === 'profile' 
-                    ? 'bg-indigo-100 text-indigo-600' 
+                  currentScreen === 'profile'
+                    ? 'bg-indigo-100 text-indigo-600'
                     : 'hover:bg-gray-100 text-gray-600'
                 }`}
                 title={t('profile')}
               >
                 <User className="w-5 h-5" />
               </button>
-              
+
               {/* Logout Button */}
               <button
                 onClick={handleLogout}
@@ -407,6 +532,8 @@ export function AssessmentPlatform({ onBack, user }: AssessmentPlatformProps) {
             onRetakePlacement={() => navigateToScreen('placement')}
             recommendations={recommendations}
             onOpenActivity={handleOpenActivityFromDashboard}
+            learningDifficulty={learningDifficulty}
+            loadingDifficulty={loadingDifficulty}
           />
         )}
         {currentScreen === 'progress' && (
@@ -416,7 +543,7 @@ export function AssessmentPlatform({ onBack, user }: AssessmentPlatformProps) {
           <SpeakingSection initialActivityId={initialSpeakingActivityId} />
         )}
         {currentScreen === 'listening' && (
-          <ListeningSection />
+          <ListeningSection cefrLevel={currentUser?.cefrLevel ?? null} />
         )}
         {currentScreen === 'writing' && (
           <WritingSection initialActivityId={initialWritingActivityId} />
@@ -432,6 +559,18 @@ export function AssessmentPlatform({ onBack, user }: AssessmentPlatformProps) {
               navigateToScreen('quiz-detail');
             }}
           />
+        )}
+        {currentScreen === 'homework' && (
+          <div className="max-w-[1400px] mx-auto px-4 sm:px-6 lg:px-8 py-8">
+            <div className="text-center py-20">
+              <FileText className="w-16 h-16 text-gray-400 mx-auto mb-4" />
+              <h2 className="text-2xl font-bold text-gray-900 mb-2">{t('nav.homework')}</h2>
+              <p className="text-gray-500">Coming soon...</p>
+            </div>
+          </div>
+        )}
+        {currentScreen === 'dictionary' && (
+          <DictionarySection />
         )}
         {currentScreen === 'placement' && currentUser && (
           <PlacementTest
@@ -480,12 +619,6 @@ export function AssessmentPlatform({ onBack, user }: AssessmentPlatformProps) {
               setSelectedQuizId(quizId);
               navigateToScreen('quiz-detail');
             }}
-          />
-        )}
-        {currentScreen === 'quiz-detail' && selectedQuizId && (
-          <QuizDetail 
-            quizId={selectedQuizId}
-            onBack={() => navigateToScreen('quiz-history')}
           />
         )}
         {currentScreen === 'quiz-detail' && selectedQuizId && (

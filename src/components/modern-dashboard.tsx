@@ -1,12 +1,15 @@
 import { motion } from 'motion/react';
 import { useState, useEffect } from 'react';
 import { 
-  TrendingUp, Clock, Award, Target, Brain, Sparkles, ChevronRight, Calendar,
-  BarChart3, Flame, Star, Trophy, Lightbulb, AlertCircle, ArrowRight
+  TrendingUp, Award, Target, Sparkles, ChevronRight,
+  BarChart3, Flame, Star, Trophy, Brain, BookOpen, Lightbulb, AlertCircle,
+  Clock, Edit, Mic
 } from 'lucide-react';
-import { getUserStats, getRecentActivities, type UserActivity } from '../lib/user-progress';
+import { getUserStats, getMistakeCountsByTopic, getRecentActivities } from '../lib/user-progress';
+import type { UserActivity } from '../lib/user-progress';
 import type { CEFRLevel } from '../lib/auth';
 import { useLanguage } from '../contexts/LanguageContext';
+import type { LearningDifficultyAnalysis } from '../lib/ai-services';
 
 interface Recommendation {
   id: string;
@@ -24,71 +27,30 @@ interface ModernDashboardProps {
   onRetakePlacement?: () => void;
   recommendations?: Recommendation[];
   onOpenActivity?: (activityId: string, type: 'speaking' | 'writing' | 'quiz') => void;
+  learningDifficulty?: LearningDifficultyAnalysis | null;
+  loadingDifficulty?: boolean;
 }
 
-export function ModernDashboard({ userName = 'Student', cefrLevel, onRetakePlacement, recommendations, onOpenActivity }: ModernDashboardProps) {
+export function ModernDashboard({ userName = 'Student', cefrLevel, onRetakePlacement, recommendations, onOpenActivity, learningDifficulty, loadingDifficulty }: ModernDashboardProps) {
   const { t } = useLanguage();
   const [stats, setStats] = useState(getUserStats());
-  const [recentActivity, setRecentActivity] = useState<UserActivity[]>([]);
+  const [recentActivities, setRecentActivities] = useState<UserActivity[]>(() => getRecentActivities(10));
 
-  // Update stats when component mounts or when activities change
+  // Update stats and recent activities when component mounts or when activities change
   useEffect(() => {
-    const updateStats = () => {
+    const update = () => {
       setStats(getUserStats());
-      setRecentActivity(getRecentActivities(3));
+      setRecentActivities(getRecentActivities(10));
     };
 
-    updateStats();
-    
-    // Listen for storage changes (when new activities are added)
-    const handleStorageChange = () => {
-      updateStats();
-    };
-    
-    window.addEventListener('storage', handleStorageChange);
-    
-    // Also check periodically (in case of same-tab updates)
-    const interval = setInterval(updateStats, 2000);
-    
+    update();
+    window.addEventListener('storage', update);
+    const interval = setInterval(update, 2000);
     return () => {
-      window.removeEventListener('storage', handleStorageChange);
+      window.removeEventListener('storage', update);
       clearInterval(interval);
     };
   }, []);
-
-  // Format date for display
-  const formatActivityDate = (dateString: string): string => {
-    const date = new Date(dateString);
-    const today = new Date();
-    const yesterday = new Date(today);
-    yesterday.setDate(yesterday.getDate() - 1);
-    
-    today.setHours(0, 0, 0, 0);
-    yesterday.setHours(0, 0, 0, 0);
-    date.setHours(0, 0, 0, 0);
-    
-    if (date.getTime() === today.getTime()) {
-      return 'Today';
-    } else if (date.getTime() === yesterday.getTime()) {
-      return 'Yesterday';
-    } else {
-      const daysDiff = Math.floor((today.getTime() - date.getTime()) / (1000 * 60 * 60 * 24));
-      return `${daysDiff} days ago`;
-    }
-  };
-
-  const getActivityColor = (type: string): string => {
-    switch (type) {
-      case 'quiz':
-        return 'text-blue-600';
-      case 'writing':
-        return 'text-green-600';
-      case 'speaking':
-        return 'text-purple-600';
-      default:
-        return 'text-gray-600';
-    }
-  };
 
   return (
     <div className="max-w-[1400px] mx-auto px-4 sm:px-6 lg:px-8 py-8">
@@ -203,120 +165,145 @@ export function ModernDashboard({ userName = 'Student', cefrLevel, onRetakePlace
         </motion.div>
       )}
 
-      {/* Personalized Recommendations */}
-      {recommendations && recommendations.length > 0 && (
-        <div className="grid lg:grid-cols-3 gap-4 mb-6">
-          {/* Recommendations - Takes 2 columns */}
+      {/* Detected topic & AI advice + Sık yapılan hatalar – eşit boyut, hata sayısı (yüzde yok) */}
+      {(() => {
+        const mistakeCounts = getMistakeCountsByTopic();
+        const hasMistakes = mistakeCounts.length > 0;
+        return (
           <motion.div
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ delay: 0.5 }}
-            className="lg:col-span-2 bg-gradient-to-br from-blue-50 to-indigo-50 rounded-xl p-5 border border-blue-200"
+            className="mb-8 grid grid-cols-1 md:grid-cols-2 gap-4"
           >
-            <div className="flex items-center gap-2 mb-3">
-              <div className="p-1.5 bg-blue-200 rounded-lg">
-                <Lightbulb className="w-4 h-4 text-blue-700" />
-              </div>
-              <div>
-                <h3 className="text-base font-bold text-gray-900">{t('dashboard.personalizedRecs')}</h3>
-                <p className="text-xs text-gray-600">{t('dashboard.basedOnPerformance')}</p>
-              </div>
-            </div>
-
-            <div className="grid md:grid-cols-2 gap-3 mb-3">
-              {recommendations && recommendations.length > 0 ? (
-                recommendations.map((rec, index) => (
-                <motion.div
-                  key={rec.id}
-                  initial={{ opacity: 0, y: 20 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  transition={{ delay: 0.55 + index * 0.05 }}
-                  className="bg-white rounded-lg p-3 hover:shadow-md transition-all cursor-pointer group border border-transparent hover:border-indigo-200"
-                >
-                  <div className="flex items-start gap-2.5 mb-2">
-                    <div className={`p-2 bg-gradient-to-br ${rec.color} rounded-lg flex-shrink-0 group-hover:scale-110 transition-transform`}>
-                      <rec.icon className="w-4 h-4 text-white" />
-                    </div>
-                    <div className="flex-1 min-w-0">
-                      <h4 className="font-bold text-gray-900 text-sm mb-1">{rec.title}</h4>
-                      <span className={`inline-block px-2 py-0.5 rounded-full text-xs font-bold ${
-                        rec.priority === 'high' ? 'bg-red-100 text-red-700' :
-                        rec.priority === 'medium' ? 'bg-yellow-100 text-yellow-700' :
-                        'bg-green-100 text-green-700'
-                      }`}>
-                        {rec.priority === 'high' ? t('dashboard.highPriority') : rec.priority === 'medium' ? t('dashboard.recommended') : t('dashboard.optional')}
+            {/* Detected topic & AI advice */}
+            <div className="min-w-0 flex flex-col">
+              <h2 className="text-base font-semibold text-gray-900 mb-3 flex items-center gap-2">
+                <Brain className="w-4 h-4 text-violet-500 shrink-0" />
+                {t('dashboard.learningDifficultyTitle')}
+              </h2>
+              {loadingDifficulty ? (
+                <div className="bg-white/80 rounded-xl border border-gray-200 p-4 flex items-center gap-2 text-gray-500 text-sm shadow-lg h-full min-h-[140px]">
+                  <div className="h-5 w-5 rounded-full border-2 border-violet-400 border-t-transparent animate-spin shrink-0" />
+                  <span>{t('dashboard.loadingDifficulty')}</span>
+                </div>
+              ) : learningDifficulty ? (
+                <div className="bg-white/80 rounded-xl border border-gray-200 shadow-lg overflow-hidden h-full min-h-[140px] flex flex-col">
+                  <div className="p-4 space-y-3 flex-1 flex flex-col">
+                    <div className="flex flex-col gap-0.5">
+                      <span className="text-xs font-semibold text-violet-600 uppercase tracking-wide flex items-center gap-1.5">
+                        <BookOpen className="w-3.5 h-3.5 shrink-0" />
+                        {t('dashboard.detectedTopicLabel')}
+                      </span>
+                      <span className="text-sm font-medium text-gray-900">
+                        {learningDifficulty.topic?.trim() ? learningDifficulty.topic : t('dashboard.noTopic')}
                       </span>
                     </div>
+                    <div className="flex flex-col gap-0.5 pt-2 border-t border-gray-100 flex-1">
+                      <span className="text-xs font-semibold text-violet-600 uppercase tracking-wide flex items-center gap-1.5">
+                        <Lightbulb className="w-3.5 h-3.5 shrink-0" />
+                        {t('dashboard.aiAdviceLabel')}
+                      </span>
+                      <p className="text-sm text-gray-600 leading-relaxed">{learningDifficulty.advice}</p>
+                    </div>
                   </div>
-                  <p className="text-xs text-gray-600 mb-2.5 line-clamp-2">{rec.description}</p>
-                  <button className="w-full px-3 py-2 bg-gradient-to-r from-indigo-600 to-purple-600 text-white rounded-lg font-semibold text-xs hover:shadow-lg transition-all flex items-center justify-center gap-1.5 group-hover:gap-2">
-                    {rec.action}
-                    <ArrowRight className="w-3.5 h-3.5" />
-                  </button>
-                </motion.div>
-              ))
+                </div>
               ) : (
-                <div className="col-span-2 text-center py-4 text-gray-500 text-sm">
-                  {t('dashboard.loadingRecs')}
+                <div className="bg-gray-50 rounded-xl border border-gray-200 p-4 text-center text-gray-500 text-sm shadow-lg h-full min-h-[140px] flex items-center justify-center">
+                  {t('dashboard.noDifficultyData')}
                 </div>
               )}
             </div>
 
-            <div className="flex items-center gap-2 text-xs text-gray-600 bg-blue-100 rounded-lg p-2">
-              <AlertCircle className="w-3.5 h-3.5 text-blue-600 flex-shrink-0" />
-              <p>{t('dashboard.proTip')}</p>
+            {/* Sık yapılan hatalar – neyden kaç kez hata (yüzde yok) */}
+            <div className="min-w-0 flex flex-col">
+              <h2 className="text-base font-semibold text-gray-900 mb-3 flex items-center gap-2">
+                <AlertCircle className="w-4 h-4 text-amber-500 shrink-0" />
+                {t('dashboard.commonMistakes')}
+              </h2>
+              {hasMistakes ? (
+                <div className="bg-white/80 rounded-xl border border-gray-200 shadow-lg overflow-hidden h-full min-h-[140px] flex flex-col">
+                  <ul className="p-4 space-y-2 list-disc list-inside text-sm text-gray-700 flex-1">
+                    {mistakeCounts.slice(0, 8).map((m, i) => (
+                      <li key={`mistake-${i}`}>
+                        <span className="font-medium">{m.topic}</span>
+                        <span className="text-gray-600"> — {m.mistakeCount} {t('dashboard.mistakesSuffix')}</span>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              ) : (
+                <div className="bg-gray-50 rounded-xl border border-gray-200 p-4 text-center text-gray-500 text-sm shadow-lg h-full min-h-[140px] flex items-center justify-center">
+                  {t('dashboard.noCommonMistakesData')}
+                </div>
+              )}
             </div>
           </motion.div>
+        );
+      })()}
 
-          {/* Recent Activity - Takes 1 column */}
-          <motion.div
-            initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ delay: 0.6 }}
-            className="bg-white rounded-xl p-5 border border-gray-200"
-          >
-            <div className="flex items-center gap-2 mb-4">
-              <div className="p-1.5 bg-indigo-100 rounded-lg">
-                <Calendar className="w-4 h-4 text-indigo-600" />
-              </div>
-              <h3 className="text-base font-bold text-gray-900">{t('dashboard.recentActivity')}</h3>
-            </div>
-            <div className="space-y-3">
-              {recentActivity.length > 0 ? (
-                recentActivity.map((activity) => (
-                  <button
-                    key={activity.id}
-                    type="button"
-                    onClick={() => {
-                      if (!onOpenActivity) return;
-                      if (activity.type === 'speaking' || activity.type === 'writing' || activity.type === 'quiz') {
-                        onOpenActivity(activity.id, activity.type as 'speaking' | 'writing' | 'quiz');
-                      }
-                    }}
-                    className="w-full flex items-center justify-between p-3 bg-gray-50 rounded-lg hover:bg-gray-100 transition-colors text-left"
-                  >
-                    <div>
-                      <div className={`font-semibold ${getActivityColor(activity.type)} text-sm capitalize`}>
-                        {activity.courseTitle || activity.type}
+      {/* Recent activities */}
+      <motion.div
+        initial={{ opacity: 0, y: 20 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ delay: 0.55 }}
+        className="mb-8"
+      >
+        <h2 className="text-base font-semibold text-gray-900 mb-3 flex items-center gap-2">
+          <Clock className="w-4 h-4 text-indigo-500 shrink-0" />
+          {t('dashboard.recentActivity')}
+        </h2>
+        {recentActivities.length === 0 ? (
+          <div className="bg-gray-50 rounded-xl border border-gray-200 p-6 text-center text-gray-500 text-sm">
+            {t('dashboard.noActivities')}
+          </div>
+        ) : (
+          <div className="bg-white/80 rounded-xl border border-gray-200 shadow-lg overflow-hidden">
+            <ul className="divide-y divide-gray-100">
+              {recentActivities.map((a) => {
+                const Icon = a.type === 'quiz' ? BookOpen : a.type === 'writing' ? Edit : Mic;
+                const title = a.courseTitle || (a.type === 'quiz' ? 'Quiz' : a.type === 'writing' ? 'Writing' : 'Speaking');
+                const dateStr = formatActivityDate(a.date, t);
+                const isClickable = !!onOpenActivity && (a.type === 'quiz' || a.type === 'writing' || a.type === 'speaking');
+                return (
+                  <li key={a.id}>
+                    <button
+                      type="button"
+                      onClick={() => isClickable && onOpenActivity(a.id, a.type as 'quiz' | 'writing' | 'speaking')}
+                      className={`w-full flex items-center gap-4 px-4 py-3 text-left transition-colors ${isClickable ? 'hover:bg-gray-50 cursor-pointer' : 'cursor-default'}`}
+                    >
+                      <div className="p-2 rounded-lg bg-indigo-50 text-indigo-600 shrink-0">
+                        <Icon className="w-4 h-4" />
                       </div>
-                      <div className="text-xs text-gray-500">{formatActivityDate(activity.date)}</div>
-                    </div>
-                    <div className="text-right">
-                      <div className="font-bold text-gray-900">{activity.score}%</div>
-                      <div className="text-xs text-gray-500">{t('dashboard.score')}</div>
-                    </div>
-                  </button>
-                ))
-              ) : (
-                <div className="text-center py-4 text-gray-500 text-sm">
-                  {t('dashboard.noActivities')}
-                </div>
-              )}
-            </div>
-          </motion.div>
-        </div>
-      )}
+                      <div className="flex-1 min-w-0">
+                        <p className="text-sm font-medium text-gray-900 truncate">{title}</p>
+                        <p className="text-xs text-gray-500">{dateStr}</p>
+                      </div>
+                      <span className="text-sm font-semibold text-indigo-600 shrink-0">{a.score}%</span>
+                      {isClickable && <ChevronRight className="w-4 h-4 text-gray-400 shrink-0" />}
+                    </button>
+                  </li>
+                );
+              })}
+            </ul>
+          </div>
+        )}
+      </motion.div>
 
     </div>
   );
+}
+
+function formatActivityDate(iso: string, t: (k: string) => string): string {
+  const d = new Date(iso);
+  const now = new Date();
+  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  const yesterday = new Date(today);
+  yesterday.setDate(yesterday.getDate() - 1);
+  const dDate = new Date(d.getFullYear(), d.getMonth(), d.getDate());
+  if (dDate.getTime() === today.getTime()) {
+    return d.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' });
+  }
+  if (dDate.getTime() === yesterday.getTime()) return t('dashboard.yesterday');
+  return d.toLocaleDateString(undefined, { day: 'numeric', month: 'short' });
 }

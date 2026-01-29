@@ -1,0 +1,453 @@
+import { useState, useEffect } from 'react';
+import { motion } from 'motion/react';
+import {
+  BookMarked,
+  Search,
+  Volume2,
+  Loader2,
+  AlertCircle,
+  Copy,
+  Check,
+  History,
+  Sparkles,
+  ExternalLink,
+  Mic2,
+  ListOrdered,
+  Quote,
+  Trash2,
+} from 'lucide-react';
+import { useLanguage } from '../contexts/LanguageContext';
+
+const DICTIONARY_API = 'https://api.dictionaryapi.dev/api/v2/entries/en';
+const RECENT_KEY = 'assessai_dictionary_recent';
+const MAX_RECENT = 10;
+
+const WORD_OF_DAY_LIST = [
+  'serendipity', 'ephemeral', 'eloquent', 'resilient', 'melancholy', 'ubiquitous', 'paradigm',
+  'pragmatic', 'ambiguous', 'nostalgia', 'voracious', 'meticulous', 'juxtaposition', 'perseverance',
+  'epiphany', 'clandestine', 'idiosyncrasy', 'magnanimous', 'surreptitious', 'vicarious',
+  'gregarious', 'lucid', 'prolific', 'tranquil', 'arduous', 'benevolent', 'cacophony',
+  'diligent', 'effervescent', 'facetious', 'garrulous', 'harbinger', 'iconoclast', 'jovial',
+];
+
+function getWordOfDay(): string {
+  const start = new Date(new Date().getFullYear(), 0, 0);
+  const diff = Date.now() - start.getTime();
+  const day = Math.floor(diff / (1000 * 60 * 60 * 24));
+  return WORD_OF_DAY_LIST[day % WORD_OF_DAY_LIST.length];
+}
+
+interface Phonetic {
+  text?: string;
+  audio?: string;
+}
+
+interface Definition {
+  definition: string;
+  example?: string;
+  synonyms?: string[];
+  antonyms?: string[];
+}
+
+interface Meaning {
+  partOfSpeech: string;
+  definitions: Definition[];
+  synonyms?: string[];
+  antonyms?: string[];
+}
+
+interface DictionaryEntry {
+  word: string;
+  phonetics: Phonetic[];
+  meanings: Meaning[];
+  sourceUrls?: string[];
+  license?: { name: string; url: string };
+}
+
+export function DictionarySection() {
+  const { t } = useLanguage();
+  const [query, setQuery] = useState('');
+  const [result, setResult] = useState<DictionaryEntry[] | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [recentSearches, setRecentSearches] = useState<string[]>(() => {
+    try {
+      const raw = localStorage.getItem(RECENT_KEY);
+      return raw ? JSON.parse(raw) : [];
+    } catch {
+      return [];
+    }
+  });
+  const [copied, setCopied] = useState(false);
+  const wordOfDay = getWordOfDay();
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(RECENT_KEY, JSON.stringify(recentSearches));
+    } catch {
+      // ignore
+    }
+  }, [recentSearches]);
+
+  const searchWord = async (word?: string) => {
+    const w = (word ?? query).trim().toLowerCase();
+    if (!w) return;
+
+    setQuery(w);
+    setLoading(true);
+    setError(null);
+    setResult(null);
+
+    try {
+      const res = await fetch(`${DICTIONARY_API}/${encodeURIComponent(w)}`);
+      if (!res.ok) {
+        if (res.status === 404) {
+          setError('Word not found. Try another spelling or word.');
+        } else {
+          setError('Could not fetch definition. Please try again.');
+        }
+        return;
+      }
+      const data: DictionaryEntry[] = await res.json();
+      setResult(data);
+      setRecentSearches((prev) => [w, ...prev.filter((x) => x !== w)].slice(0, MAX_RECENT));
+    } catch {
+      setError('Network error. Please check your connection and try again.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const playAudio = (url: string) => {
+    new Audio(url).play().catch(() => {});
+  };
+
+  const getPhoneticsWithAudio = (entry: DictionaryEntry): Phonetic[] => {
+    return entry.phonetics?.filter((p) => p.text || p.audio) ?? [];
+  };
+
+  const getFirstPhoneticText = (entry: DictionaryEntry): string | null => {
+    return entry.phonetics?.find((p) => p.text)?.text ?? null;
+  };
+
+  const copyToClipboard = async (entry: DictionaryEntry) => {
+    const lines: string[] = [entry.word];
+    const phonetic = getFirstPhoneticText(entry);
+    if (phonetic) lines.push(phonetic);
+    entry.meanings?.forEach((m) => {
+      lines.push(`\n${m.partOfSpeech}`);
+      m.definitions?.forEach((d, i) => {
+        lines.push(`${i + 1}. ${d.definition}`);
+        if (d.example) lines.push(`   e.g. ${d.example}`);
+      });
+      if (m.synonyms?.length) lines.push(`Synonyms: ${m.synonyms.join(', ')}`);
+      if (m.antonyms?.length) lines.push(`Antonyms: ${m.antonyms.join(', ')}`);
+    });
+    try {
+      await navigator.clipboard.writeText(lines.join('\n'));
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    } catch {
+      // ignore
+    }
+  };
+
+  const totalDefinitions = result?.reduce(
+    (acc, e) => acc + (e.meanings?.reduce((a, m) => a + (m.definitions?.length ?? 0), 0) ?? 0),
+    0
+  ) ?? 0;
+
+  return (
+    <div className="max-w-[1400px] mx-auto px-4 sm:px-6 lg:px-8 py-8">
+      {/* Page header - same as Listening / Quiz */}
+      <motion.div
+        initial={{ opacity: 0, y: 20 }}
+        animate={{ opacity: 1, y: 0 }}
+        className="mb-8"
+      >
+        <h1 className="text-4xl font-bold text-gray-900 mb-2">{t('nav.dictionary')}</h1>
+      </motion.div>
+
+      {/* Search card */}
+      <motion.div
+        initial={{ opacity: 0, y: 16 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ delay: 0.05 }}
+        className="bg-white rounded-2xl p-6 border border-gray-200 shadow-lg mb-6"
+      >
+        <div className="flex gap-3">
+          <input
+            type="text"
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            onKeyDown={(e) => e.key === 'Enter' && searchWord()}
+            placeholder="e.g. hello, vocabulary, resilience"
+            className="flex-1 px-4 py-3 rounded-xl border border-gray-200 focus:border-indigo-500 focus:ring-2 focus:ring-indigo-200 outline-none transition-all placeholder:text-gray-400"
+            aria-label="Enter English word"
+          />
+          <button
+            type="button"
+            onClick={() => searchWord()}
+            disabled={loading || !query.trim()}
+            className="inline-flex items-center gap-2 px-5 py-3 rounded-xl bg-gradient-to-r from-indigo-600 to-purple-600 text-white font-semibold hover:shadow-lg transition-all disabled:opacity-50 disabled:cursor-not-allowed shrink-0"
+          >
+            {loading ? <Loader2 className="w-5 h-5 animate-spin" /> : <Search className="w-5 h-5" />}
+            Search
+          </button>
+        </div>
+      </motion.div>
+
+      {/* Word of the day + Recent - same card style, grid always */}
+      <motion.div
+        initial={{ opacity: 0, y: 16 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ delay: 0.08 }}
+        className="mb-6 grid gap-6 lg:grid-cols-3"
+      >
+        <div className="bg-white rounded-2xl p-6 border border-gray-200 shadow-lg">
+          <h2 className="text-sm font-semibold text-gray-500 uppercase tracking-wide mb-2 flex items-center gap-2">
+            <Sparkles className="w-4 h-4 text-amber-500" />
+            Word of the day
+          </h2>
+          <p className="text-xs text-gray-600 mb-3">Click to see its definition.</p>
+          <button
+            type="button"
+            onClick={() => searchWord(wordOfDay)}
+            className="px-4 py-2 rounded-xl bg-gradient-to-br from-amber-50 to-orange-50 border border-amber-200 text-amber-800 font-semibold hover:shadow-md transition-all"
+          >
+            {wordOfDay}
+          </button>
+        </div>
+
+        <div className="lg:col-span-2 bg-white rounded-2xl p-6 border border-gray-200 shadow-lg">
+          <div className="flex items-center justify-between gap-2 mb-2">
+            <h2 className="text-sm font-semibold text-gray-500 uppercase tracking-wide flex items-center gap-2">
+              <History className="w-4 h-4" />
+              Recent searches
+            </h2>
+            {recentSearches.length > 0 && (
+              <button
+                type="button"
+                onClick={() => setRecentSearches([])}
+                className="text-xs font-medium text-gray-500 hover:text-red-600 transition-colors flex items-center gap-1"
+                title="Clear history"
+              >
+                <Trash2 className="w-3.5 h-3.5" />
+                Clear history
+              </button>
+            )}
+          </div>
+          <p className="text-xs text-gray-600 mb-3">Click a word to look it up again.</p>
+          {recentSearches.length > 0 ? (
+            <div className="flex flex-wrap gap-2">
+              {recentSearches.map((word) => (
+                <button
+                  key={word}
+                  type="button"
+                  onClick={() => searchWord(word)}
+                  className="px-3 py-2 rounded-xl bg-gray-100 text-gray-700 text-sm font-medium hover:bg-gray-200 transition-colors"
+                >
+                  {word}
+                </button>
+              ))}
+            </div>
+          ) : (
+            <p className="text-sm text-gray-500 italic">No recent searches yet.</p>
+          )}
+        </div>
+      </motion.div>
+
+      {/* Error */}
+      {error && (
+        <motion.div
+          initial={{ opacity: 0, y: 10 }}
+          animate={{ opacity: 1, y: 0 }}
+          className="mb-6 rounded-2xl border border-red-200 bg-red-50 p-4 shadow-lg flex items-start gap-3 text-red-800"
+          role="alert"
+        >
+          <AlertCircle className="w-5 h-5 flex-shrink-0 mt-0.5" />
+          <div>
+            <p className="font-medium">{error}</p>
+            <p className="text-sm mt-1 text-red-700">Try checking the spelling or use a different word.</p>
+          </div>
+        </motion.div>
+      )}
+
+      {/* Results */}
+      {result && result.length > 0 && (
+        <motion.section
+          initial={{ opacity: 0, y: 16 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ delay: 0.1 }}
+          className="space-y-6"
+          aria-label="Definition results"
+        >
+          {result.map((entry, entryIdx) => {
+            const phonetics = getPhoneticsWithAudio(entry);
+            return (
+              <article
+                key={`${entry.word}-${entryIdx}`}
+                className="rounded-2xl border border-gray-200 bg-white shadow-lg overflow-hidden"
+              >
+                {/* Word header */}
+                <div className="bg-gradient-to-br from-indigo-50 to-purple-50 border-b border-indigo-100 p-6">
+                  <div className="flex flex-wrap items-start justify-between gap-4">
+                    <div>
+                      <h2 className="text-2xl font-bold text-gray-900 capitalize">{entry.word}</h2>
+                      <p className="text-sm font-medium text-gray-600 mt-1 flex items-center gap-2">
+                        <Mic2 className="w-4 h-4 text-indigo-600" />
+                        Pronunciation
+                      </p>
+                      <div className="flex flex-wrap items-center gap-2 mt-2">
+                        {phonetics.map((p, i) => (
+                          <span key={i} className="flex items-center gap-1.5">
+                            {p.text && (
+                              <span className="text-gray-700 font-mono text-sm">{p.text}</span>
+                            )}
+                            {p.audio && (
+                              <button
+                                type="button"
+                                onClick={() => playAudio(p.audio!)}
+                                className="p-2 rounded-lg bg-white border border-indigo-200 text-indigo-600 hover:bg-indigo-50 transition-colors"
+                                title="Listen to pronunciation"
+                              >
+                                <Volume2 className="w-4 h-4" />
+                              </button>
+                            )}
+                          </span>
+                        ))}
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      {totalDefinitions > 0 && (
+                        <span className="inline-flex items-center px-3 py-2 rounded-xl border border-gray-200 bg-white text-gray-600 text-sm font-medium">
+                          {totalDefinitions} definition{totalDefinitions !== 1 ? 's' : ''}
+                        </span>
+                      )}
+                      <button
+                        type="button"
+                        onClick={() => copyToClipboard(entry)}
+                        className="inline-flex items-center gap-2 px-3 py-2 rounded-xl border border-gray-200 bg-white text-gray-700 text-sm font-medium hover:bg-gray-50 transition-colors"
+                      >
+                        {copied ? <Check className="w-4 h-4 text-green-600" /> : <Copy className="w-4 h-4" />}
+                        {copied ? 'Copied' : 'Copy'}
+                      </button>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Meanings */}
+                <div className="p-6 space-y-8">
+                  {entry.meanings?.map((meaning, mIdx) => (
+                    <section key={mIdx}>
+                      <h3 className="text-sm font-semibold text-indigo-700 uppercase tracking-wide mb-3 flex items-center gap-2">
+                        <ListOrdered className="w-4 h-4" />
+                        As a {meaning.partOfSpeech}
+                      </h3>
+                      <ul className="space-y-4">
+                        {meaning.definitions?.map((def, dIdx) => (
+                          <li key={dIdx} className="pl-4 border-l-2 border-indigo-100">
+                            <p className="text-gray-900 font-medium">{def.definition}</p>
+                            {def.example && (
+                              <p className="text-gray-600 text-sm mt-2 flex items-start gap-2">
+                                <Quote className="w-4 h-4 text-gray-400 flex-shrink-0 mt-0.5" />
+                                <span className="italic">{def.example}</span>
+                              </p>
+                            )}
+                            {def.synonyms && def.synonyms.length > 0 && (
+                              <p className="text-sm mt-2 text-gray-600">
+                                <span className="font-semibold text-gray-700">Synonyms: </span>
+                                {def.synonyms.map((s, i) => (
+                                  <span key={i}>
+                                    <button
+                                      type="button"
+                                      onClick={() => searchWord(s)}
+                                      className="text-indigo-600 hover:underline"
+                                    >
+                                      {s}
+                                    </button>
+                                    {i < def.synonyms!.length - 1 ? ', ' : ''}
+                                  </span>
+                                ))}
+                              </p>
+                            )}
+                            {def.antonyms && def.antonyms.length > 0 && (
+                              <p className="text-sm mt-1 text-gray-600">
+                                <span className="font-semibold text-gray-700">Antonyms: </span>
+                                {def.antonyms.map((a, i) => (
+                                  <span key={i}>
+                                    <button
+                                      type="button"
+                                      onClick={() => searchWord(a)}
+                                      className="text-indigo-600 hover:underline"
+                                    >
+                                      {a}
+                                    </button>
+                                    {i < def.antonyms!.length - 1 ? ', ' : ''}
+                                  </span>
+                                ))}
+                              </p>
+                            )}
+                          </li>
+                        ))}
+                      </ul>
+                      {meaning.synonyms && meaning.synonyms.length > 0 && (
+                        <p className="text-sm mt-3 text-gray-600">
+                          <span className="font-semibold text-gray-700">Synonyms: </span>
+                          {meaning.synonyms.map((s, i) => (
+                            <span key={i}>
+                              <button
+                                type="button"
+                                onClick={() => searchWord(s)}
+                                className="text-indigo-600 hover:underline"
+                              >
+                                {s}
+                              </button>
+                              {i < meaning.synonyms!.length - 1 ? ', ' : ''}
+                            </span>
+                          ))}
+                        </p>
+                      )}
+                      {meaning.antonyms && meaning.antonyms.length > 0 && (
+                        <p className="text-sm mt-1 text-gray-600">
+                          <span className="font-semibold text-gray-700">Antonyms: </span>
+                          {meaning.antonyms.map((a, i) => (
+                            <span key={i}>
+                              <button
+                                type="button"
+                                onClick={() => searchWord(a)}
+                                className="text-indigo-600 hover:underline"
+                              >
+                                {a}
+                              </button>
+                              {i < meaning.antonyms!.length - 1 ? ', ' : ''}
+                            </span>
+                          ))}
+                        </p>
+                      )}
+                    </section>
+                  ))}
+                </div>
+
+                {entry.sourceUrls?.length ? (
+                  <div className="px-6 pb-4 pt-0">
+                    <a
+                      href={entry.sourceUrls[0]}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="inline-flex items-center gap-2 text-xs text-indigo-600 hover:underline"
+                    >
+                      <ExternalLink className="w-3.5 h-3.5" />
+                      View source on Wiktionary
+                    </a>
+                  </div>
+                ) : null}
+              </article>
+            );
+          })}
+        </motion.section>
+      )}
+
+    </div>
+  );
+}
