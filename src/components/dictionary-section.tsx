@@ -17,6 +17,9 @@ import {
   Trash2,
 } from 'lucide-react';
 import { useLanguage } from '../contexts/LanguageContext';
+import { generatePersonalizedWords } from '../lib/ai-services';
+import { getActivities } from '../lib/user-progress';
+import { getCurrentUser } from '../lib/auth';
 
 const DICTIONARY_API = 'https://api.dictionaryapi.dev/api/v2/entries/en';
 const RECENT_KEY = 'assessai_dictionary_recent';
@@ -79,7 +82,29 @@ export function DictionarySection() {
     }
   });
   const [copied, setCopied] = useState(false);
-  const wordOfDay = getWordOfDay();
+  const [personalizedWords, setPersonalizedWords] = useState<string[]>([]);
+  const [loadingWords, setLoadingWords] = useState(true);
+  
+  // Get personalized words based on user level and activities
+  useEffect(() => {
+    const loadPersonalizedWords = async () => {
+      try {
+        setLoadingWords(true);
+        const user = getCurrentUser();
+        const activities = getActivities();
+        const words = await generatePersonalizedWords(user?.cefrLevel || null, activities, 4);
+        setPersonalizedWords(words);
+      } catch (error) {
+        console.error('Error loading personalized words:', error);
+        // Fallback to default word
+        setPersonalizedWords([getWordOfDay()]);
+      } finally {
+        setLoadingWords(false);
+      }
+    };
+    
+    loadPersonalizedWords();
+  }, []);
 
   useEffect(() => {
     try {
@@ -197,7 +222,7 @@ export function DictionarySection() {
         </div>
       </motion.div>
 
-      {/* Word of the day + Recent - same card style, grid always */}
+      {/* Recommended Words + Recent - same card style, grid always */}
       <motion.div
         initial={{ opacity: 0, y: 16 }}
         animate={{ opacity: 1, y: 0 }}
@@ -205,18 +230,30 @@ export function DictionarySection() {
         className="mb-6 grid gap-6 lg:grid-cols-3"
       >
         <div className="bg-white rounded-2xl p-6 border border-gray-200 shadow-lg">
-          <h2 className="text-sm font-semibold text-gray-500 uppercase tracking-wide mb-2 flex items-center gap-2">
-            <Sparkles className="w-4 h-4 text-amber-500" />
-            Word of the day
+          <h2 className="text-base font-semibold text-gray-500 uppercase tracking-wide mb-2 flex items-center gap-2">
+            <Sparkles className="w-5 h-5 text-amber-500" />
+            Words of the Day
           </h2>
-          <p className="text-xs text-gray-600 mb-3">Click to see its definition.</p>
-          <button
-            type="button"
-            onClick={() => searchWord(wordOfDay)}
-            className="px-4 py-2 rounded-xl bg-gradient-to-br from-amber-50 to-orange-50 border border-amber-200 text-amber-800 font-semibold hover:shadow-md transition-all"
-          >
-            {wordOfDay}
-          </button>
+          <p className="text-xs text-gray-600 mb-3">Personalized for your level and progress. Click to see definitions.</p>
+          {loadingWords ? (
+            <div className="flex items-center gap-2 text-amber-600">
+              <Loader2 className="w-4 h-4 animate-spin" />
+              <span className="text-sm">Loading personalized words...</span>
+            </div>
+          ) : (
+            <div className="flex flex-wrap gap-3">
+              {personalizedWords.map((word, index) => (
+                <button
+                  key={index}
+                  type="button"
+                  onClick={() => searchWord(word)}
+                  className="px-5 py-3 rounded-xl bg-gradient-to-br from-amber-50 to-orange-50 border border-amber-200 text-amber-800 font-semibold hover:shadow-md hover:scale-105 transition-all text-base"
+                >
+                  {word}
+                </button>
+              ))}
+            </div>
+          )}
         </div>
 
         <div className="lg:col-span-2 bg-white rounded-2xl p-6 border border-gray-200 shadow-lg">

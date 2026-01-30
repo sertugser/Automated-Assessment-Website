@@ -92,6 +92,24 @@ export function AssessmentPlatform({ onBack, user }: AssessmentPlatformProps) {
   const [studyPlanHovered, setStudyPlanHovered] = useState(false);
   const [difficultyRefreshTrigger, setDifficultyRefreshTrigger] = useState(0);
 
+  // Close study plan dropdown when clicking outside
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      const target = event.target as HTMLElement;
+      if (studyPlanHovered && !target.closest('.relative.flex.flex-1')) {
+        setStudyPlanHovered(false);
+      }
+    };
+    
+    if (studyPlanHovered) {
+      document.addEventListener('mousedown', handleClickOutside);
+    }
+    
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+    };
+  }, [studyPlanHovered]);
+
   // Persist last visited screen so refresh returns the user to the same tab
   useEffect(() => {
     const saved = localStorage.getItem('assessai_current_screen') as Screen | null;
@@ -106,6 +124,31 @@ export function AssessmentPlatform({ onBack, user }: AssessmentPlatformProps) {
 
   useEffect(() => {
     localStorage.setItem('assessai_current_screen', currentScreen);
+  }, [currentScreen]);
+
+  // Sync currentUser with localStorage when screen changes or periodically
+  useEffect(() => {
+    const syncUser = () => {
+      const updatedUser = getCurrentUser();
+      if (updatedUser) {
+        // Only update if user ID matches or if it's a different user
+        if (!currentUser || updatedUser.id === currentUser.id) {
+          setCurrentUser(updatedUser);
+        }
+      }
+    };
+    
+    // Sync immediately when screen changes to dashboard
+    if (currentScreen === 'dashboard') {
+      syncUser();
+    }
+    
+    // Also sync periodically to catch any updates
+    const interval = setInterval(syncUser, 2000);
+    
+    return () => {
+      clearInterval(interval);
+    };
   }, [currentScreen]);
 
   // Load AI-generated recommendations and learning difficulty analysis
@@ -262,6 +305,8 @@ export function AssessmentPlatform({ onBack, user }: AssessmentPlatformProps) {
       return prev;
     });
     setCurrentScreen(screen);
+    // Close study plan dropdown when navigating to a different screen
+    setStudyPlanHovered(false);
   };
 
   const handleBack = () => {
@@ -421,10 +466,9 @@ export function AssessmentPlatform({ onBack, user }: AssessmentPlatformProps) {
                     {/* Study Plan Dropdown */}
                     <div
                       className="relative flex flex-1"
-                      onMouseEnter={() => setStudyPlanHovered(true)}
-                      onMouseLeave={() => setStudyPlanHovered(false)}
                     >
                       <button
+                        onClick={() => setStudyPlanHovered(!studyPlanHovered)}
                         className={`flex flex-1 items-center justify-center gap-1 px-2.5 py-2 text-sm font-medium transition-all relative rounded-lg ${
                           ['speaking', 'listening', 'writing', 'quiz'].includes(currentScreen)
                             ? 'text-purple-700 bg-purple-100'
@@ -438,7 +482,7 @@ export function AssessmentPlatform({ onBack, user }: AssessmentPlatformProps) {
 
                       {/* Dropdown Menu */}
                       {studyPlanHovered && (
-                        <div className="absolute top-full left-0 mt-1 w-full bg-white rounded-lg shadow-lg border border-gray-200 py-2 z-50">
+                        <div className="absolute top-full left-0 w-full bg-white rounded-lg shadow-lg border border-gray-200 py-2 z-50" style={{ marginTop: '34px' }}>
                           {[
                             { id: 'speaking', label: t('nav.speaking'), icon: Mic },
                             { id: 'listening', label: t('nav.listening'), icon: Headphones },
@@ -500,14 +544,33 @@ export function AssessmentPlatform({ onBack, user }: AssessmentPlatformProps) {
               {/* Profile Button */}
               <button
                 onClick={() => navigateToScreen('profile')}
-                className={`p-2 rounded-lg transition-all ${
+                className={`transition-all ${
                   currentScreen === 'profile'
-                    ? 'bg-indigo-100 text-indigo-600'
-                    : 'hover:bg-gray-100 text-gray-600'
+                    ? 'bg-indigo-100 text-indigo-600 rounded-full'
+                    : 'hover:bg-purple-200 text-gray-600 rounded-full'
                 }`}
+                style={{ padding: '4px' }}
                 title={t('profile')}
               >
-                <User className="w-5 h-5" />
+                {currentUser?.avatar ? (
+                  <div className="w-10 h-10 rounded-full overflow-hidden bg-gradient-to-br from-indigo-500 to-purple-600 relative">
+                    <img 
+                      src={currentUser.avatar} 
+                      alt={currentUser.name}
+                      className="absolute inset-0 w-full h-full object-cover"
+                      style={{ 
+                        width: '100%',
+                        height: '100%',
+                        objectFit: 'cover',
+                        transform: 'scale(1.2)'
+                      }}
+                    />
+                  </div>
+                ) : (
+                  <div className="w-10 h-10 rounded-full bg-gray-300 flex items-center justify-center">
+                    <User className="w-6 h-6 text-gray-600" />
+                  </div>
+                )}
               </button>
 
               {/* Logout Button */}
@@ -525,10 +588,10 @@ export function AssessmentPlatform({ onBack, user }: AssessmentPlatformProps) {
 
       {/* Main Content */}
       <main>
-        {currentScreen === 'dashboard' && (
-          <ModernDashboard 
-            userName={user?.name}
-            cefrLevel={currentUser?.cefrLevel ?? null}
+         {currentScreen === 'dashboard' && (
+           <ModernDashboard 
+             userName={currentUser?.name || user?.name}
+             cefrLevel={currentUser?.cefrLevel ?? null}
             onRetakePlacement={() => navigateToScreen('placement')}
             recommendations={recommendations}
             onOpenActivity={handleOpenActivityFromDashboard}

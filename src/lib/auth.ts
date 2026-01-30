@@ -161,6 +161,26 @@ export const updateUser = (userId: string, updates: Partial<User>): boolean => {
   return true;
 };
 
+// Change password
+export const changePassword = (
+  email: string,
+  currentPassword: string,
+  newPassword: string
+): { success: boolean; error?: string } => {
+  const passwords = JSON.parse(localStorage.getItem('aafs_passwords') || '{}');
+  
+  // Check current password
+  if (passwords[email] !== currentPassword) {
+    return { success: false, error: 'Current password is incorrect' };
+  }
+
+  // Update password
+  passwords[email] = newPassword;
+  localStorage.setItem('aafs_passwords', JSON.stringify(passwords));
+
+  return { success: true };
+};
+
 // Delete user (admin only)
 export const deleteUser = (userId: string): boolean => {
   const users = getUsers();

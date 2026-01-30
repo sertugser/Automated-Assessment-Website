@@ -199,12 +199,21 @@ export function ModernDashboard({ userName = 'Student', cefrLevel, onRetakePlace
                         {learningDifficulty.topic?.trim() ? learningDifficulty.topic : t('dashboard.noTopic')}
                       </span>
                     </div>
-                    <div className="flex flex-col gap-0.5 pt-2 border-t border-gray-100 flex-1">
+                    <div className="flex flex-col gap-2 pt-3 border-t border-gray-100 flex-1 min-h-0">
                       <span className="text-xs font-semibold text-violet-600 uppercase tracking-wide flex items-center gap-1.5">
                         <Lightbulb className="w-3.5 h-3.5 shrink-0" />
                         {t('dashboard.aiAdviceLabel')}
                       </span>
-                      <p className="text-sm text-gray-600 leading-relaxed">{learningDifficulty.advice}</p>
+                      <div className="flex-1 overflow-y-auto pr-1">
+                        <div className="text-sm text-gray-700 leading-relaxed space-y-2">
+                          {learningDifficulty.advice.split(/\.(?=\s|$)/).filter(s => s.trim()).map((sentence, idx) => (
+                            <div key={idx} className="flex items-start gap-2">
+                              <span className="text-violet-500 mt-1.5 shrink-0">•</span>
+                              <span className="flex-1">{sentence.trim()}{sentence.trim() && !sentence.trim().endsWith('.') ? '.' : ''}</span>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
                     </div>
                   </div>
                 </div>

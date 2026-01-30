@@ -3,7 +3,7 @@ export type Lang = 'en' | 'tr';
 const en: Record<string, string> = {
   'nav.dashboard': 'Dashboard',
   'nav.progress': 'Progress',
-  'nav.studyPlan': 'Study Plan',
+  'nav.studyPlan': 'AI Feedback',
   'nav.homework': 'Homework',
   'nav.dictionary': 'Dictionary',
   'nav.speaking': 'Speaking',
@@ -163,7 +163,7 @@ const en: Record<string, string> = {
 const tr: Record<string, string> = {
   'nav.dashboard': 'Kontrol Paneli',
   'nav.progress': 'İlerleme',
-  'nav.studyPlan': 'Çalışma Planı',
+  'nav.studyPlan': 'AI Geri Bildirimi',
   'nav.homework': 'Ödev',
   'nav.dictionary': 'Sözlük',
   'nav.speaking': 'Konuşma',

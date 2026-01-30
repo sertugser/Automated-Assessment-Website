@@ -2685,6 +2685,129 @@ export const extractTextFromImage = async (imageBlob: Blob): Promise<string> => 
 /**
  * Analyze handwritten assignment
  */
+export const generatePersonalizedWords = async (
+  cefrLevel: string | null,
+  userActivities: any[],
+  count: number = 6
+): Promise<string[]> => {
+  try {
+    // Analyze user activities to find weak areas
+    const activityTypes = userActivities.map(a => a.type);
+    const recentScores = userActivities.slice(-10).map(a => a.score);
+    const averageScore = recentScores.length > 0 
+      ? recentScores.reduce((a, b) => a + b, 0) / recentScores.length 
+      : 0;
+    
+    // Extract vocabulary-related errors from activities
+    const vocabularyErrors: string[] = [];
+    userActivities.forEach(activity => {
+      if (activity.writingDetailedFeedback?.vocabulary?.suggestions) {
+        vocabularyErrors.push(...activity.writingDetailedFeedback.vocabulary.suggestions);
+      }
+      if (activity.speakingFeedback?.vocabulary?.suggestions) {
+        vocabularyErrors.push(...activity.speakingFeedback.vocabulary.suggestions);
+      }
+    });
+
+    const prompt = `You are an expert English teacher. Generate ${count} personalized English vocabulary words for a student.
+
+Student Information:
+- CEFR Level: ${cefrLevel || 'Not assessed yet'}
+- Average Score: ${averageScore.toFixed(0)}%
+- Activity Types: ${[...new Set(activityTypes)].join(', ') || 'None yet'}
+- Vocabulary Areas Needing Improvement: ${vocabularyErrors.length > 0 ? vocabularyErrors.slice(0, 5).join(', ') : 'General vocabulary'}
+
+Requirements:
+1. Words should be appropriate for ${cefrLevel || 'beginner'} level
+2. Focus on words that will help improve their weak areas
+3. Include a mix of common and useful words
+4. Words should be practical and relevant to their learning journey
+5. Return ONLY a JSON array of word strings, no explanations, no markdown, just: ["word1", "word2", "word3", ...]
+
+Example format: ["resilient", "pragmatic", "eloquent", "meticulous", "ubiquitous", "paradigm"]`;
+
+    const response = await fetch(GROQ_ENDPOINT, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${GROQ_API_KEY}`,
+      },
+      body: JSON.stringify({
+        model: 'llama-3.3-70b-versatile',
+        messages: [
+          {
+            role: 'system',
+            content: 'You are an expert English teacher. Return only valid JSON arrays, no markdown, no explanations.',
+          },
+          { role: 'user', content: prompt },
+        ],
+        temperature: 0.7,
+        max_tokens: 200,
+      }),
+    });
+
+    if (!response.ok) {
+      throw new Error(`Groq API error: ${response.status}`);
+    }
+
+    const data = await response.json();
+    const content = data.choices?.[0]?.message?.content?.trim() || '[]';
+    
+    // Try to parse JSON array
+    let words: string[] = [];
+    try {
+      // Remove markdown code blocks if present
+      const cleaned = content.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim();
+      words = JSON.parse(cleaned);
+      if (!Array.isArray(words)) {
+        words = [];
+      }
+    } catch {
+      // Fallback: try to extract words from text
+      const wordMatches = content.match(/"([^"]+)"/g);
+      if (wordMatches) {
+        words = wordMatches.map(m => m.replace(/"/g, ''));
+      }
+    }
+
+    // If we got fewer words than requested, fill with fallback words
+    if (words.length < count) {
+      const fallbackWords = [
+        'serendipity', 'ephemeral', 'eloquent', 'resilient', 'melancholy', 
+        'ubiquitous', 'paradigm', 'pragmatic', 'ambiguous', 'nostalgia',
+        'voracious', 'meticulous', 'juxtaposition', 'perseverance', 'epiphany'
+      ];
+      const level = cefrLevel || 'A1';
+      const levelWords: Record<string, string[]> = {
+        'A1': ['hello', 'friend', 'happy', 'beautiful', 'important', 'interesting'],
+        'A2': ['comfortable', 'difficult', 'wonderful', 'excellent', 'necessary', 'possible'],
+        'B1': ['achieve', 'develop', 'improve', 'manage', 'organize', 'realize'],
+        'B2': ['analyze', 'consider', 'establish', 'maintain', 'recognize', 'significant'],
+        'C1': ['comprehensive', 'distinguish', 'elaborate', 'fundamental', 'sophisticated', 'substantial'],
+        'C2': ['ambiguous', 'paradigm', 'ubiquitous', 'meticulous', 'perseverance', 'epiphany']
+      };
+      const appropriateWords = levelWords[level] || levelWords['B1'];
+      const needed = count - words.length;
+      words.push(...appropriateWords.slice(0, needed));
+    }
+
+    return words.slice(0, count);
+  } catch (error) {
+    console.error('[AI] Error generating personalized words:', error);
+    // Fallback to level-appropriate words
+    const level = cefrLevel || 'A1';
+    const fallbackWords: Record<string, string[]> = {
+      'A1': ['hello', 'friend', 'happy', 'beautiful', 'important', 'interesting'],
+      'A2': ['comfortable', 'difficult', 'wonderful', 'excellent', 'necessary', 'possible'],
+      'B1': ['achieve', 'develop', 'improve', 'manage', 'organize', 'realize'],
+      'B2': ['analyze', 'consider', 'establish', 'maintain', 'recognize', 'significant'],
+      'C1': ['comprehensive', 'distinguish', 'elaborate', 'fundamental', 'sophisticated', 'substantial'],
+      'C2': ['ambiguous', 'paradigm', 'ubiquitous', 'meticulous', 'perseverance', 'epiphany']
+    };
+    return fallbackWords[level] || fallbackWords['B1'];
+  }
+};
+
 export const analyzeHandwriting = async (imageBlob: Blob): Promise<{ text: string; feedback: AIFeedback }> => {
   const extractedText = await extractTextFromImage(imageBlob);
   const feedback = await analyzeWriting(extractedText);
