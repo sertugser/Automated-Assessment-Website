@@ -593,19 +593,6 @@ export function AssessmentPlatform({ onBack, user }: AssessmentPlatformProps) {
                       <BookMarked className="w-4 h-4" />
                       <span>{t('nav.dictionary')}</span>
                     </button>
-
-                    {/* Retake test (placement) */}
-                    <button
-                      onClick={() => navigateToScreen('placement')}
-                      className={`flex flex-1 items-center justify-center gap-1 px-2.5 py-2 text-sm font-medium transition-all relative rounded-lg ${
-                        currentScreen === 'placement'
-                          ? 'text-purple-700 bg-purple-100'
-                          : 'text-gray-600 hover:text-gray-900 hover:bg-gray-50'
-                      }`}
-                    >
-                      <Target className="w-4 h-4" />
-                      <span>{t('nav.retakeTest')}</span>
-                    </button>
                   </div>
                 </nav>
               )}
@@ -650,13 +637,12 @@ export function AssessmentPlatform({ onBack, user }: AssessmentPlatformProps) {
                   title={t('profile')}
                 >
                   {currentUser?.avatar ? (
-                    <div className="w-10 h-10 rounded-full overflow-hidden bg-gray-200 relative shrink-0">
-                      <img 
-                        src={currentUser.avatar} 
-                        alt={currentUser.name}
-                        className="block w-full h-full object-cover object-center"
-                      />
-                    </div>
+                    <div 
+                      className="w-10 h-10 rounded-full overflow-hidden bg-gray-200 shrink-0"
+                      style={{ backgroundImage: `url(${currentUser.avatar})`, backgroundSize: 'cover', backgroundPosition: 'center' }}
+                      role="img"
+                      aria-label={currentUser.name}
+                    />
                   ) : (
                     <div className="w-10 h-10 rounded-full bg-gray-200 flex items-center justify-center">
                       <User className="w-5 h-5 text-gray-600" />
@@ -702,10 +688,11 @@ export function AssessmentPlatform({ onBack, user }: AssessmentPlatformProps) {
            <ModernDashboard 
              userName={currentUser?.name || user?.name}
              cefrLevel={currentUser?.cefrLevel ?? null}
-            recommendations={recommendations}
-            onOpenActivity={handleOpenActivityFromDashboard}
-            learningDifficulty={learningDifficulty}
-            loadingDifficulty={loadingDifficulty}
+             recommendations={recommendations}
+             onOpenActivity={handleOpenActivityFromDashboard}
+             onRetakeTest={() => navigateToScreen('placement')}
+             learningDifficulty={learningDifficulty}
+             loadingDifficulty={loadingDifficulty}
           />
         )}
         {currentScreen === 'progress' && (

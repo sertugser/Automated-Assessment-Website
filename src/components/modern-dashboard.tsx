@@ -26,11 +26,12 @@ interface ModernDashboardProps {
   cefrLevel?: CEFRLevel | null;
   recommendations?: Recommendation[];
   onOpenActivity?: (activityId: string, type: 'speaking' | 'writing' | 'quiz') => void;
+  onRetakeTest?: () => void;
   learningDifficulty?: LearningDifficultyAnalysis | null;
   loadingDifficulty?: boolean;
 }
 
-export function ModernDashboard({ userName = 'Student', cefrLevel, recommendations, onOpenActivity, learningDifficulty, loadingDifficulty }: ModernDashboardProps) {
+export function ModernDashboard({ userName = 'Student', cefrLevel, recommendations, onOpenActivity, onRetakeTest, learningDifficulty, loadingDifficulty }: ModernDashboardProps) {
   const { t } = useLanguage();
   const [stats, setStats] = useState(getUserStats());
   const [recentActivities, setRecentActivities] = useState<UserActivity[]>(() => getRecentActivities(10));
@@ -70,7 +71,11 @@ export function ModernDashboard({ userName = 'Student', cefrLevel, recommendatio
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ delay: 0.1 }}
-          className="bg-gradient-to-br from-indigo-500 to-indigo-600 rounded-xl p-4 text-white shadow-lg h-full"
+          role={onRetakeTest ? 'button' : undefined}
+          tabIndex={onRetakeTest ? 0 : undefined}
+          onClick={onRetakeTest}
+          onKeyDown={onRetakeTest ? (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onRetakeTest(); } } : undefined}
+          className={`bg-gradient-to-br from-indigo-500 to-indigo-600 rounded-xl p-4 text-white shadow-lg h-full ${onRetakeTest ? 'cursor-pointer hover:from-indigo-600 hover:to-indigo-700 transition-colors' : ''}`}
         >
           <div className="flex items-center justify-between mb-2">
             <div className="p-2 bg-white/20 rounded-lg backdrop-blur-sm">
@@ -81,6 +86,9 @@ export function ModernDashboard({ userName = 'Student', cefrLevel, recommendatio
           <div className="text-2xl font-bold mb-0.5">{cefrLevel ?? '—'}</div>
           <div className="text-indigo-100 text-xs">
             {cefrLevel ? t('dashboard.cefrLevel') : t('dashboard.takePlacementTest')}
+            {onRetakeTest && cefrLevel && (
+              <span className="block mt-1 text-sm font-semibold text-white underline decoration-white/80 underline-offset-1">{t('dashboard.clickToRetake')}</span>
+            )}
           </div>
         </motion.div>
 

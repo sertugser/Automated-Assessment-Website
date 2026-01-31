@@ -186,15 +186,11 @@ export function ProfilePage({ user, onLogout, onUpdateUser }: ProfilePageProps) 
                   className={`w-24 h-24 rounded-full flex items-center justify-center text-white text-3xl font-bold shadow-lg overflow-hidden cursor-pointer transition-all relative ${
                     avatarPreview ? 'bg-gray-200' : 'bg-gradient-to-br from-indigo-500 to-purple-600'
                   }`}
+                  style={avatarPreview ? { backgroundImage: `url(${avatarPreview})`, backgroundSize: 'cover', backgroundPosition: 'center' } : undefined}
                   onClick={handleAvatarClick}
+                  role={avatarPreview ? 'img' : undefined}
+                  aria-label={avatarPreview ? user.name : undefined}
                 >
-                  {avatarPreview && (
-                    <img 
-                      src={avatarPreview} 
-                      alt={user.name}
-                      className="block w-full h-full object-cover object-center"
-                    />
-                  )}
                 </div>
                 <div className="absolute -bottom-1 -right-1 w-8 h-8 bg-green-500 rounded-full border-4 border-white flex items-center justify-center z-10">
                   <div className="w-3 h-3 bg-white rounded-full"></div>
