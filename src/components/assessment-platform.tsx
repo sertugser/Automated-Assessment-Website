@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import { 
   ArrowLeft, Trophy, Zap, Target, User, LogOut, Home, 
   BarChart3, Mic, Edit, Brain, BookOpen, MessageSquare, Headphones,
-  FileText, Briefcase, GraduationCap, ChevronDown, BookMarked
+  FileText, Briefcase, GraduationCap, ChevronDown, BookMarked, Bell
 } from 'lucide-react';
 import { ModernDashboard } from './modern-dashboard';
 import { ProgressSection } from './progress-section';
@@ -11,14 +11,14 @@ import { ListeningSection } from './listening-section';
 import { WritingSection } from './writing-section';
 import { QuizSection, quizCategories } from './quiz-section';
 import { QuizHistory } from './quiz-history';
-import { QuizDetail } from './quiz-detail';
 import { PlacementTest } from './placement-test';
 import { QuizInterface } from './quiz-interface';
 import { ResultsScreen } from './results-screen';
 import { ProfilePage } from './profile-page';
 import { DictionarySection } from './dictionary-section';
+import { HomeworkSection } from './homework-section';
 import { type User as UserType, updateUser, getCurrentUser } from '../lib/auth';
-import { getUserStats, getRecentActivities, saveActivity, analyzeUserWeaknesses, getMistakeCountsByTopic, getWrongAnswerDetails, getActivitiesByType, type UserActivity } from '../lib/user-progress';
+import { getUserStats, getRecentActivities, saveActivity, analyzeUserWeaknesses, getMistakeCountsByTopic, getWrongAnswerDetails, getActivitiesByType, getActivities, type UserActivity } from '../lib/user-progress';
 import { generatePersonalizedRecommendations, getLearningDifficultyAnalysis, type LearningDifficultyAnalysis } from '../lib/ai-services';
 import { useLanguage } from '../contexts/LanguageContext';
 import logo from '../assets/fbaa49f59eaf54473f226d88f4a207918ca971f2.png';
@@ -87,9 +87,13 @@ export function AssessmentPlatform({ onBack, user }: AssessmentPlatformProps) {
   const [loadingDifficulty, setLoadingDifficulty] = useState(true);
   const [initialSpeakingActivityId, setInitialSpeakingActivityId] = useState<string | null>(null);
   const [initialWritingActivityId, setInitialWritingActivityId] = useState<string | null>(null);
+  const [initialWritingAssignmentId, setInitialWritingAssignmentId] = useState<string | null>(null);
   const [initialQuizActivityId, setInitialQuizActivityId] = useState<string | null>(null);
-  const [selectedQuizId, setSelectedQuizId] = useState<string | null>(null);
+  const [initialQuizAssignmentId, setInitialQuizAssignmentId] = useState<string | null>(null);
+  const [resultsFromHistory, setResultsFromHistory] = useState(false);
   const [studyPlanHovered, setStudyPlanHovered] = useState(false);
+  const [profileDropdownOpen, setProfileDropdownOpen] = useState(false);
+  const [notificationPanelOpen, setNotificationPanelOpen] = useState(false);
   const [difficultyRefreshTrigger, setDifficultyRefreshTrigger] = useState(0);
 
   // Close study plan dropdown when clicking outside
@@ -110,6 +114,23 @@ export function AssessmentPlatform({ onBack, user }: AssessmentPlatformProps) {
     };
   }, [studyPlanHovered]);
 
+  // Close profile dropdown and notification panel when clicking outside
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      const target = event.target as HTMLElement;
+      if (profileDropdownOpen && !target.closest('[data-profile-dropdown]')) {
+        setProfileDropdownOpen(false);
+      }
+      if (notificationPanelOpen && !target.closest('[data-notification-panel]')) {
+        setNotificationPanelOpen(false);
+      }
+    };
+    if (profileDropdownOpen || notificationPanelOpen) {
+      document.addEventListener('mousedown', handleClickOutside);
+    }
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, [profileDropdownOpen, notificationPanelOpen]);
+
   // Persist last visited screen so refresh returns the user to the same tab
   useEffect(() => {
     const saved = localStorage.getItem('assessai_current_screen') as Screen | null;
@@ -124,6 +145,13 @@ export function AssessmentPlatform({ onBack, user }: AssessmentPlatformProps) {
 
   useEffect(() => {
     localStorage.setItem('assessai_current_screen', currentScreen);
+  }, [currentScreen]);
+
+  // Clear assignment context when leaving writing (so next visit gets fresh state)
+  useEffect(() => {
+    if (currentScreen !== 'writing') {
+      setInitialWritingAssignmentId(null);
+    }
   }, [currentScreen]);
 
   // Sync currentUser with localStorage when screen changes or periodically
@@ -339,6 +367,7 @@ export function AssessmentPlatform({ onBack, user }: AssessmentPlatformProps) {
   };
 
   const handleQuizComplete = (results: QuizResult) => {
+    setResultsFromHistory(false);
     setQuizResults(results);
 
     // Generate simple feedback based on results
@@ -381,10 +410,16 @@ export function AssessmentPlatform({ onBack, user }: AssessmentPlatformProps) {
   };
 
   const handleRetry = () => {
-    navigateToScreen('course-quiz');
+    if (resultsFromHistory) {
+      navigateToScreen('quiz-history');
+      setResultsFromHistory(false);
+    } else {
+      navigateToScreen('course-quiz');
+    }
   };
 
   const handleNewCourse = () => {
+    setResultsFromHistory(false);
     navigateToScreen('dashboard');
     setSelectedCourse('');
   };
@@ -397,8 +432,25 @@ export function AssessmentPlatform({ onBack, user }: AssessmentPlatformProps) {
       setInitialWritingActivityId(activityId);
       navigateToScreen('writing');
     } else if (type === 'quiz') {
-      setSelectedQuizId(activityId);
-      navigateToScreen('quiz-detail');
+      const activities = getActivities();
+      const activity = activities.find(a => a.id === activityId && a.type === 'quiz');
+      if (activity) {
+        const correct = activity.correctAnswers ?? 0;
+        const total = activity.totalQuestions ?? activity.quizQuestions?.length ?? 0;
+        setQuizResults({
+          score: activity.score,
+          totalQuestions: total || 1,
+          correctAnswers: correct,
+          timeSpent: activity.duration ?? 0,
+          courseTitle: activity.courseTitle || activity.courseId || 'Quiz',
+          questions: activity.quizQuestions,
+          userAnswers: activity.quizUserAnswers,
+          readingPassage: activity.quizReadingPassage,
+          feedback: activity.quizFeedback,
+        });
+        setResultsFromHistory(false); // Dashboard'dan geldi -> Geri = Dashboard
+        navigateToScreen('results');
+      }
     }
   };
 
@@ -417,10 +469,17 @@ export function AssessmentPlatform({ onBack, user }: AssessmentPlatformProps) {
           <div className="flex items-center justify-between h-20">
             {/* Left: Back button (only during quiz), Logo and Navigation Tabs */}
             <div className="flex items-center gap-4 flex-1">
-              {currentScreen === 'course-quiz' && (
+              {['course-quiz', 'results', 'quiz-history'].includes(currentScreen) && (
                 <button
-                  onClick={handleBack}
+                  onClick={
+                    currentScreen === 'results'
+                      ? (resultsFromHistory ? () => navigateToScreen('quiz-history') : () => navigateToScreen('dashboard'))
+                      : currentScreen === 'quiz-history'
+                        ? () => navigateToScreen('quiz')
+                        : handleBack
+                  }
                   className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
+                  title={t('back')}
                 >
                   <ArrowLeft className="w-5 h-5 text-gray-600" />
                 </button>
@@ -433,8 +492,8 @@ export function AssessmentPlatform({ onBack, user }: AssessmentPlatformProps) {
                 AssessAI
               </button>
 
-              {/* Navigation Tabs - Only hide on quiz, results, placement */}
-              {!['course-quiz', 'results', 'placement'].includes(currentScreen) && (
+              {/* Navigation Tabs - Only hide on quiz, placement */}
+              {!['course-quiz', 'placement'].includes(currentScreen) && (
                 <nav className="flex items-center justify-center flex-1 ml-6">
                   <div className="flex items-center w-full max-w-4xl gap-0">
                     {/* Dashboard */}
@@ -534,53 +593,104 @@ export function AssessmentPlatform({ onBack, user }: AssessmentPlatformProps) {
                       <BookMarked className="w-4 h-4" />
                       <span>{t('nav.dictionary')}</span>
                     </button>
+
+                    {/* Retake test (placement) */}
+                    <button
+                      onClick={() => navigateToScreen('placement')}
+                      className={`flex flex-1 items-center justify-center gap-1 px-2.5 py-2 text-sm font-medium transition-all relative rounded-lg ${
+                        currentScreen === 'placement'
+                          ? 'text-purple-700 bg-purple-100'
+                          : 'text-gray-600 hover:text-gray-900 hover:bg-gray-50'
+                      }`}
+                    >
+                      <Target className="w-4 h-4" />
+                      <span>{t('nav.retakeTest')}</span>
+                    </button>
                   </div>
                 </nav>
               )}
             </div>
 
-            {/* Right: User Actions */}
-            <div className="flex items-center gap-2">
-              {/* Profile Button */}
-              <button
-                onClick={() => navigateToScreen('profile')}
-                className={`transition-all ${
-                  currentScreen === 'profile'
-                    ? 'bg-indigo-100 text-indigo-600 rounded-full'
-                    : 'hover:bg-purple-200 text-gray-600 rounded-full'
-                }`}
-                style={{ padding: '4px' }}
-                title={t('profile')}
-              >
-                {currentUser?.avatar ? (
-                  <div className="w-10 h-10 rounded-full overflow-hidden bg-gradient-to-br from-indigo-500 to-purple-600 relative">
-                    <img 
-                      src={currentUser.avatar} 
-                      alt={currentUser.name}
-                      className="absolute inset-0 w-full h-full object-cover"
-                      style={{ 
-                        width: '100%',
-                        height: '100%',
-                        objectFit: 'cover',
-                        transform: 'scale(1.2)'
-                      }}
-                    />
-                  </div>
-                ) : (
-                  <div className="w-10 h-10 rounded-full bg-gray-300 flex items-center justify-center">
-                    <User className="w-6 h-6 text-gray-600" />
+            {/* Right: Notification panel + Profile */}
+            <div className="flex items-center gap-3 shrink-0 ml-auto">
+              {/* Bildirim paneli */}
+              <div className="relative" data-notification-panel>
+                <button
+                  onClick={() => setNotificationPanelOpen(!notificationPanelOpen)}
+                  className={`flex items-center justify-center gap-1 px-3 py-2.5 text-sm font-medium transition-all rounded-lg ${
+                    notificationPanelOpen
+                      ? 'text-purple-700 bg-purple-100'
+                      : 'text-gray-600 hover:text-gray-900 hover:bg-gray-50'
+                  }`}
+                  title={t('nav.notificationCenter')}
+                >
+                  <Bell className="w-5 h-5" />
+                </button>
+                {notificationPanelOpen && (
+                  <div className="absolute right-0 top-full mt-2 w-64 bg-white rounded-xl shadow-lg border border-gray-200 overflow-hidden z-50">
+                    <div className="p-4 border-b border-gray-100">
+                      <h3 className="font-semibold text-gray-900">{t('nav.notificationCenter')}</h3>
+                    </div>
+                    <div className="p-6">
+                      <p className="text-sm text-gray-500 text-center">{t('nav.noNotifications')}</p>
+                    </div>
                   </div>
                 )}
-              </button>
+              </div>
 
-              {/* Logout Button */}
-              <button
-                onClick={handleLogout}
-                className="p-2 rounded-lg transition-all hover:bg-red-50 text-gray-600 hover:text-red-600"
-                title={t('signOut')}
-              >
-                <LogOut className="w-5 h-5" />
-              </button>
+              {/* Profil - nav bar temasıyla uyumlu */}
+              <div className="relative" data-profile-dropdown>
+                <button
+                  onClick={() => setProfileDropdownOpen(!profileDropdownOpen)}
+                  className={`flex items-center justify-center gap-1 px-2.5 py-2.5 text-sm font-medium transition-all rounded-lg ${
+                    currentScreen === 'profile'
+                      ? 'text-purple-700 bg-purple-100'
+                      : 'text-gray-600 hover:text-gray-900 hover:bg-gray-50'
+                  }`}
+                  title={t('profile')}
+                >
+                  {currentUser?.avatar ? (
+                    <div className="w-10 h-10 rounded-full overflow-hidden bg-gray-200 relative shrink-0">
+                      <img 
+                        src={currentUser.avatar} 
+                        alt={currentUser.name}
+                        className="block w-full h-full object-cover object-center"
+                      />
+                    </div>
+                  ) : (
+                    <div className="w-10 h-10 rounded-full bg-gray-200 flex items-center justify-center">
+                      <User className="w-5 h-5 text-gray-600" />
+                    </div>
+                  )}
+                </button>
+              {/* Dropdown on click */}
+                {profileDropdownOpen && (
+                  <div className="absolute right-0 top-full mt-2 z-50">
+                    <div className="bg-white rounded-xl shadow-lg border border-gray-200 py-2 min-w-[200px]">
+                    <button
+                      onClick={() => {
+                        navigateToScreen('profile');
+                        setProfileDropdownOpen(false);
+                      }}
+                      className="w-full flex items-center gap-3 px-5 py-3 text-sm text-left text-gray-700 hover:bg-gray-50 transition-colors whitespace-nowrap"
+                    >
+                      <User className="w-4 h-4 shrink-0" />
+                      {t('nav.viewProfile')}
+                    </button>
+                    <button
+                      onClick={() => {
+                        handleLogout();
+                        setProfileDropdownOpen(false);
+                      }}
+                      className="w-full flex items-center gap-3 px-5 py-3 text-sm text-left text-gray-700 hover:bg-red-50 hover:text-red-600 transition-colors whitespace-nowrap"
+                    >
+                      <LogOut className="w-4 h-4 shrink-0" />
+                      {t('signOut')}
+                    </button>
+                    </div>
+                  </div>
+                )}
+              </div>
             </div>
           </div>
         </div>
@@ -592,7 +702,6 @@ export function AssessmentPlatform({ onBack, user }: AssessmentPlatformProps) {
            <ModernDashboard 
              userName={currentUser?.name || user?.name}
              cefrLevel={currentUser?.cefrLevel ?? null}
-            onRetakePlacement={() => navigateToScreen('placement')}
             recommendations={recommendations}
             onOpenActivity={handleOpenActivityFromDashboard}
             learningDifficulty={learningDifficulty}
@@ -609,7 +718,10 @@ export function AssessmentPlatform({ onBack, user }: AssessmentPlatformProps) {
           <ListeningSection cefrLevel={currentUser?.cefrLevel ?? null} />
         )}
         {currentScreen === 'writing' && (
-          <WritingSection initialActivityId={initialWritingActivityId} />
+          <WritingSection
+            initialActivityId={initialWritingActivityId}
+            assignmentId={initialWritingAssignmentId}
+          />
         )}
         {currentScreen === 'quiz' && (
           <QuizSection 
@@ -618,19 +730,46 @@ export function AssessmentPlatform({ onBack, user }: AssessmentPlatformProps) {
             onViewAllQuizzes={() => navigateToScreen('quiz-history')}
             initialQuizActivityId={initialQuizActivityId}
             onQuizClick={(quizId) => {
-              setSelectedQuizId(quizId);
-              navigateToScreen('quiz-detail');
+              const activities = getActivities();
+              const activity = activities.find(a => a.id === quizId && a.type === 'quiz');
+              if (activity) {
+                const correct = activity.correctAnswers ?? 0;
+                const total = activity.totalQuestions ?? activity.quizQuestions?.length ?? 0;
+                setQuizResults({
+                  score: activity.score,
+                  totalQuestions: total || 1,
+                  correctAnswers: correct,
+                  timeSpent: activity.duration ?? 0,
+                  courseTitle: activity.courseTitle || activity.courseId || 'Quiz',
+                  questions: activity.quizQuestions,
+                  userAnswers: activity.quizUserAnswers,
+                  readingPassage: activity.quizReadingPassage,
+                  feedback: activity.quizFeedback,
+                });
+                setResultsFromHistory(true);
+                navigateToScreen('results');
+              }
             }}
           />
         )}
         {currentScreen === 'homework' && (
-          <div className="max-w-[1400px] mx-auto px-4 sm:px-6 lg:px-8 py-8">
-            <div className="text-center py-20">
-              <FileText className="w-16 h-16 text-gray-400 mx-auto mb-4" />
-              <h2 className="text-2xl font-bold text-gray-900 mb-2">{t('nav.homework')}</h2>
-              <p className="text-gray-500">Coming soon...</p>
-            </div>
-          </div>
+          <HomeworkSection
+            onStartAssignment={(assignmentId, type, courseId) => {
+              if (type === 'writing') {
+                setInitialWritingAssignmentId(assignmentId);
+                setInitialWritingActivityId(null);
+                navigateToScreen('writing');
+              } else if (type === 'quiz' && courseId) {
+                setInitialQuizAssignmentId(assignmentId);
+                handleCourseSelect(courseId);
+              } else if (type === 'speaking') {
+                setInitialSpeakingActivityId(null);
+                navigateToScreen('speaking');
+              } else {
+                navigateToScreen(type === 'writing' ? 'writing' : type === 'quiz' ? 'quiz' : 'speaking');
+              }
+            }}
+          />
         )}
         {currentScreen === 'dictionary' && (
           <DictionarySection />
@@ -666,6 +805,7 @@ export function AssessmentPlatform({ onBack, user }: AssessmentPlatformProps) {
             results={quizResults}
             onRetry={handleRetry}
             onNewCourse={handleNewCourse}
+            onBack={resultsFromHistory ? () => navigateToScreen('quiz-history') : () => navigateToScreen('dashboard')}
           />
         )}
         {currentScreen === 'profile' && currentUser && (
@@ -679,15 +819,26 @@ export function AssessmentPlatform({ onBack, user }: AssessmentPlatformProps) {
           <QuizHistory 
             onBack={() => navigateToScreen('quiz')}
             onQuizClick={(quizId) => {
-              setSelectedQuizId(quizId);
-              navigateToScreen('quiz-detail');
+              const activities = getActivities();
+              const activity = activities.find(a => a.id === quizId && a.type === 'quiz');
+              if (activity) {
+                const correct = activity.correctAnswers ?? 0;
+                const total = activity.totalQuestions ?? activity.quizQuestions?.length ?? 0;
+                setQuizResults({
+                  score: activity.score,
+                  totalQuestions: total || 1,
+                  correctAnswers: correct,
+                  timeSpent: activity.duration ?? 0,
+                  courseTitle: activity.courseTitle || activity.courseId || 'Quiz',
+                  questions: activity.quizQuestions,
+                  userAnswers: activity.quizUserAnswers,
+                  readingPassage: activity.quizReadingPassage,
+                  feedback: activity.quizFeedback,
+                });
+                setResultsFromHistory(true);
+                navigateToScreen('results');
+              }
             }}
-          />
-        )}
-        {currentScreen === 'quiz-detail' && selectedQuizId && (
-          <QuizDetail 
-            quizId={selectedQuizId}
-            onBack={() => navigateToScreen('quiz-history')}
           />
         )}
       </main>

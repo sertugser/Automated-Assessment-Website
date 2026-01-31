@@ -47,18 +47,6 @@ export const quizCategories = [
     courseId: 'reading-comprehension',
   },
   {
-    id: 4,
-    title: 'Listening Practice',
-    description: 'Improve audio comprehension',
-    difficulty: 'Intermediate',
-    questions: 15,
-    duration: 18,
-    color: 'from-orange-500 to-orange-600',
-    bgColor: 'bg-orange-50',
-    icon: Brain,
-    courseId: 'listening',
-  },
-  {
     id: 5,
     title: 'Advanced Grammar',
     description: 'Master complex structures',

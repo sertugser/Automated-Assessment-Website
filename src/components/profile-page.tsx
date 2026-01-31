@@ -183,20 +183,16 @@ export function ProfilePage({ user, onLogout, onUpdateUser }: ProfilePageProps) 
                 onMouseLeave={() => setIsHoveringAvatar(false)}
               >
                 <div 
-                  className="w-24 h-24 rounded-full bg-gradient-to-br from-indigo-500 to-purple-600 flex items-center justify-center text-white text-3xl font-bold shadow-lg overflow-hidden cursor-pointer transition-all relative"
+                  className={`w-24 h-24 rounded-full flex items-center justify-center text-white text-3xl font-bold shadow-lg overflow-hidden cursor-pointer transition-all relative ${
+                    avatarPreview ? 'bg-gray-200' : 'bg-gradient-to-br from-indigo-500 to-purple-600'
+                  }`}
                   onClick={handleAvatarClick}
                 >
                   {avatarPreview && (
                     <img 
                       src={avatarPreview} 
                       alt={user.name}
-                      className="absolute inset-0 w-full h-full object-cover"
-                      style={{ 
-                        width: '100%',
-                        height: '100%',
-                        objectFit: 'cover',
-                        transform: 'scale(1.2)'
-                      }}
+                      className="block w-full h-full object-cover object-center"
                     />
                   )}
                 </div>

@@ -22,8 +22,13 @@ import { getActivities } from '../lib/user-progress';
 import { getCurrentUser } from '../lib/auth';
 
 const DICTIONARY_API = 'https://api.dictionaryapi.dev/api/v2/entries/en';
-const RECENT_KEY = 'assessai_dictionary_recent';
+const RECENT_KEY_PREFIX = 'assessai_dictionary_recent_';
 const MAX_RECENT = 10;
+
+function getRecentKey(): string {
+  const user = getCurrentUser();
+  return user ? `${RECENT_KEY_PREFIX}${user.id}` : `${RECENT_KEY_PREFIX}guest`;
+}
 
 const WORD_OF_DAY_LIST = [
   'serendipity', 'ephemeral', 'eloquent', 'resilient', 'melancholy', 'ubiquitous', 'paradigm',
@@ -75,7 +80,7 @@ export function DictionarySection() {
   const [error, setError] = useState<string | null>(null);
   const [recentSearches, setRecentSearches] = useState<string[]>(() => {
     try {
-      const raw = localStorage.getItem(RECENT_KEY);
+      const raw = localStorage.getItem(getRecentKey());
       return raw ? JSON.parse(raw) : [];
     } catch {
       return [];
@@ -108,7 +113,7 @@ export function DictionarySection() {
 
   useEffect(() => {
     try {
-      localStorage.setItem(RECENT_KEY, JSON.stringify(recentSearches));
+      localStorage.setItem(getRecentKey(), JSON.stringify(recentSearches));
     } catch {
       // ignore
     }

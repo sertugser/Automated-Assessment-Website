@@ -26,6 +26,25 @@ export interface AuthState {
 const USERS_KEY = 'aafs_users';
 const CURRENT_USER_KEY = 'aafs_current_user';
 
+// Demo account passwords (ensure they always exist for login)
+const DEMO_PASSWORDS: Record<string, string> = {
+  'student@demo.com': 'Student@123',
+  'instructor@demo.com': 'Instructor@123',
+  'admin@aafs.com': 'Admin@2026!',
+};
+
+const ensureDemoPasswords = () => {
+  const stored = JSON.parse(localStorage.getItem('aafs_passwords') || '{}');
+  let updated = false;
+  for (const [email, pwd] of Object.entries(DEMO_PASSWORDS)) {
+    if (!stored[email]) {
+      stored[email] = pwd;
+      updated = true;
+    }
+  }
+  if (updated) localStorage.setItem('aafs_passwords', JSON.stringify(stored));
+};
+
 // Initialize with demo users
 const initializeDemoUsers = () => {
   const existingUsers = localStorage.getItem(USERS_KEY);
@@ -55,10 +74,9 @@ const initializeDemoUsers = () => {
       },
     ];
     localStorage.setItem(USERS_KEY, JSON.stringify(demoUsers));
-    
-    // Set admin password
-    const passwords = { 'admin@aafs.com': 'Admin@2026!' };
-    localStorage.setItem('aafs_passwords', JSON.stringify(passwords));
+    ensureDemoPasswords();
+  } else {
+    ensureDemoPasswords();
   }
 };
 

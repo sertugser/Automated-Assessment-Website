@@ -2,7 +2,7 @@ import { motion } from 'motion/react';
 import { useState, useEffect } from 'react';
 import { 
   TrendingUp, Award, Target, Sparkles, ChevronRight,
-  BarChart3, Flame, Star, Trophy, Brain, BookOpen, Lightbulb, AlertCircle,
+  BarChart3, Flame, Star, Trophy, BookOpen, Lightbulb, AlertCircle,
   Clock, Edit, Mic
 } from 'lucide-react';
 import { getUserStats, getMistakeCountsByTopic, getRecentActivities } from '../lib/user-progress';
@@ -24,14 +24,13 @@ interface Recommendation {
 interface ModernDashboardProps {
   userName?: string;
   cefrLevel?: CEFRLevel | null;
-  onRetakePlacement?: () => void;
   recommendations?: Recommendation[];
   onOpenActivity?: (activityId: string, type: 'speaking' | 'writing' | 'quiz') => void;
   learningDifficulty?: LearningDifficultyAnalysis | null;
   loadingDifficulty?: boolean;
 }
 
-export function ModernDashboard({ userName = 'Student', cefrLevel, onRetakePlacement, recommendations, onOpenActivity, learningDifficulty, loadingDifficulty }: ModernDashboardProps) {
+export function ModernDashboard({ userName = 'Student', cefrLevel, recommendations, onOpenActivity, learningDifficulty, loadingDifficulty }: ModernDashboardProps) {
   const { t } = useLanguage();
   const [stats, setStats] = useState(getUserStats());
   const [recentActivities, setRecentActivities] = useState<UserActivity[]>(() => getRecentActivities(10));
@@ -134,37 +133,6 @@ export function ModernDashboard({ userName = 'Student', cefrLevel, onRetakePlace
         </motion.div>
       </div>
 
-      {/* Placement / CEFR Banner */}
-      {onRetakePlacement && (
-        <motion.div
-          initial={{ opacity: 0, y: 20 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ delay: 0.45 }}
-          onClick={onRetakePlacement}
-          className="bg-gradient-to-r from-indigo-600 via-purple-600 to-pink-600 rounded-2xl p-6 mb-8 cursor-pointer hover:shadow-2xl transition-all duration-300 hover:-translate-y-1 group"
-        >
-          <div className="flex items-center justify-between text-white">
-            <div className="flex items-center gap-4">
-              <div className="p-4 bg-white/20 rounded-2xl backdrop-blur-sm group-hover:scale-110 transition-transform">
-                <Target className="w-8 h-8" />
-              </div>
-              <div>
-                <h3 className="text-2xl font-bold mb-1">
-                  {cefrLevel ? t('dashboard.retakePlacement') : t('dashboard.discoverLevel')}
-                </h3>
-                <p className="text-indigo-100">
-                  {cefrLevel ? t('dashboard.placementDesc') : t('dashboard.placementDescNew')}
-                </p>
-              </div>
-            </div>
-            <div className="flex items-center gap-2 bg-white/20 backdrop-blur-sm px-6 py-3 rounded-xl font-semibold group-hover:bg-white/30 transition-all">
-              <span>{cefrLevel ? t('dashboard.retakeTest') : t('dashboard.startTest')}</span>
-              <ChevronRight className="w-5 h-5 group-hover:translate-x-1 transition-transform" />
-            </div>
-          </div>
-        </motion.div>
-      )}
-
       {/* Detected topic & AI advice + Sık yapılan hatalar – eşit boyut, hata sayısı (yüzde yok) */}
       {(() => {
         const mistakeCounts = getMistakeCountsByTopic();
@@ -179,16 +147,16 @@ export function ModernDashboard({ userName = 'Student', cefrLevel, onRetakePlace
             {/* Detected topic & AI advice */}
             <div className="min-w-0 flex flex-col">
               <h2 className="text-base font-semibold text-gray-900 mb-3 flex items-center gap-2">
-                <Brain className="w-4 h-4 text-violet-500 shrink-0" />
+                <Sparkles className="w-4 h-4 text-violet-500 shrink-0" />
                 {t('dashboard.learningDifficultyTitle')}
               </h2>
               {loadingDifficulty ? (
-                <div className="bg-white/80 rounded-xl border border-gray-200 p-4 flex items-center gap-2 text-gray-500 text-sm shadow-lg h-full min-h-[140px]">
+                <div className="bg-gradient-to-br from-violet-50 to-purple-100 rounded-xl border border-violet-200 p-4 flex items-center gap-2 text-violet-700 text-sm shadow-lg h-full min-h-[140px]">
                   <div className="h-5 w-5 rounded-full border-2 border-violet-400 border-t-transparent animate-spin shrink-0" />
                   <span>{t('dashboard.loadingDifficulty')}</span>
                 </div>
               ) : learningDifficulty ? (
-                <div className="bg-white/80 rounded-xl border border-gray-200 shadow-lg overflow-hidden h-full min-h-[140px] flex flex-col">
+                <div className="bg-gradient-to-br from-violet-50 to-purple-100 rounded-xl border border-violet-200 shadow-lg overflow-hidden h-full min-h-[140px] flex flex-col">
                   <div className="p-4 space-y-3 flex-1 flex flex-col">
                     <div className="flex flex-col gap-0.5">
                       <span className="text-xs font-semibold text-violet-600 uppercase tracking-wide flex items-center gap-1.5">
@@ -199,7 +167,7 @@ export function ModernDashboard({ userName = 'Student', cefrLevel, onRetakePlace
                         {learningDifficulty.topic?.trim() ? learningDifficulty.topic : t('dashboard.noTopic')}
                       </span>
                     </div>
-                    <div className="flex flex-col gap-2 pt-3 border-t border-gray-100 flex-1 min-h-0">
+                    <div className="flex flex-col gap-2 pt-3 border-t border-violet-200/60 flex-1 min-h-0">
                       <span className="text-xs font-semibold text-violet-600 uppercase tracking-wide flex items-center gap-1.5">
                         <Lightbulb className="w-3.5 h-3.5 shrink-0" />
                         {t('dashboard.aiAdviceLabel')}
@@ -218,7 +186,7 @@ export function ModernDashboard({ userName = 'Student', cefrLevel, onRetakePlace
                   </div>
                 </div>
               ) : (
-                <div className="bg-gray-50 rounded-xl border border-gray-200 p-4 text-center text-gray-500 text-sm shadow-lg h-full min-h-[140px] flex items-center justify-center">
+                <div className="bg-gradient-to-br from-violet-50 to-purple-100 rounded-xl border border-violet-200 p-4 text-center text-violet-600 text-sm shadow-lg h-full min-h-[140px] flex items-center justify-center">
                   {t('dashboard.noDifficultyData')}
                 </div>
               )}
@@ -231,8 +199,8 @@ export function ModernDashboard({ userName = 'Student', cefrLevel, onRetakePlace
                 {t('dashboard.commonMistakes')}
               </h2>
               {hasMistakes ? (
-                <div className="bg-white/80 rounded-xl border border-gray-200 shadow-lg overflow-hidden h-full min-h-[140px] flex flex-col">
-                  <ul className="p-4 space-y-2 list-disc list-inside text-sm text-gray-700 flex-1">
+                <div className="bg-gradient-to-br from-amber-50 to-orange-100 rounded-xl border border-amber-200 shadow-lg overflow-hidden h-full min-h-[140px] flex flex-col">
+                  <ul className="p-4 space-y-2 list-disc list-inside text-sm text-gray-800 flex-1">
                     {mistakeCounts.slice(0, 8).map((m, i) => (
                       <li key={`mistake-${i}`}>
                         <span className="font-medium">{m.topic}</span>
@@ -242,7 +210,7 @@ export function ModernDashboard({ userName = 'Student', cefrLevel, onRetakePlace
                   </ul>
                 </div>
               ) : (
-                <div className="bg-gray-50 rounded-xl border border-gray-200 p-4 text-center text-gray-500 text-sm shadow-lg h-full min-h-[140px] flex items-center justify-center">
+                <div className="bg-gradient-to-br from-amber-50 to-orange-100 rounded-xl border border-amber-200 p-4 text-center text-amber-700 text-sm shadow-lg h-full min-h-[140px] flex items-center justify-center">
                   {t('dashboard.noCommonMistakesData')}
                 </div>
               )}
@@ -263,12 +231,12 @@ export function ModernDashboard({ userName = 'Student', cefrLevel, onRetakePlace
           {t('dashboard.recentActivity')}
         </h2>
         {recentActivities.length === 0 ? (
-          <div className="bg-gray-50 rounded-xl border border-gray-200 p-6 text-center text-gray-500 text-sm">
+          <div className="bg-gradient-to-br from-indigo-50 to-blue-100 rounded-xl border border-indigo-200 p-6 text-center text-indigo-600 text-sm">
             {t('dashboard.noActivities')}
           </div>
         ) : (
-          <div className="bg-white/80 rounded-xl border border-gray-200 shadow-lg overflow-hidden">
-            <ul className="divide-y divide-gray-100">
+          <div className="bg-gradient-to-br from-indigo-50 to-blue-100 rounded-xl border border-indigo-200 shadow-lg overflow-hidden">
+            <ul className="divide-y divide-indigo-200/60">
               {recentActivities.map((a) => {
                 const Icon = a.type === 'quiz' ? BookOpen : a.type === 'writing' ? Edit : Mic;
                 const title = a.courseTitle || (a.type === 'quiz' ? 'Quiz' : a.type === 'writing' ? 'Writing' : 'Speaking');
@@ -279,7 +247,7 @@ export function ModernDashboard({ userName = 'Student', cefrLevel, onRetakePlace
                     <button
                       type="button"
                       onClick={() => isClickable && onOpenActivity(a.id, a.type as 'quiz' | 'writing' | 'speaking')}
-                      className={`w-full flex items-center gap-4 px-4 py-3 text-left transition-colors ${isClickable ? 'hover:bg-gray-50 cursor-pointer' : 'cursor-default'}`}
+                      className={`w-full flex items-center gap-4 px-4 py-3 text-left transition-colors ${isClickable ? 'hover:bg-indigo-100/60 cursor-pointer' : 'cursor-default'}`}
                     >
                       <div className="p-2 rounded-lg bg-indigo-50 text-indigo-600 shrink-0">
                         <Icon className="w-4 h-4" />

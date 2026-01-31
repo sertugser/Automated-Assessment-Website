@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo, useRef } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { CheckCircle, XCircle, Clock, ChevronRight, ChevronLeft, Sparkles, BookOpen } from 'lucide-react';
+import { Clock, ChevronRight, ChevronLeft, Sparkles, BookOpen } from 'lucide-react';
 import { generateQuizQuestions, generateIELTSSimulation, generateReadingComprehension } from '../lib/ai-services';
 import { toast } from 'sonner';
 import { useLanguage } from '../contexts/LanguageContext';
@@ -89,7 +89,6 @@ export function QuizInterface({ courseId, onComplete, onBack, questionCount: pro
   const [isLoading, setIsLoading] = useState(false);
   const [currentQuestion, setCurrentQuestion] = useState(0);
   const [selectedAnswer, setSelectedAnswer] = useState<number | null>(null);
-  const [showFeedback, setShowFeedback] = useState(false);
   const [answers, setAnswers] = useState<(boolean | null)[]>([]);
   const [selections, setSelections] = useState<(number | null)[]>([]);
   const [timeElapsed, setTimeElapsed] = useState(0);
@@ -191,8 +190,11 @@ export function QuizInterface({ courseId, onComplete, onBack, questionCount: pro
       correctAnswers: correctCount,
       timeSpent: timeElapsed,
       courseTitle: quizInfo.title,
+      questions,
+      userAnswers: selections,
+      readingPassage: readingPassage || undefined,
     });
-  }, [isIELTS, timeUp, timeUpSubmitted, questions.length, answers, timeElapsed, quizInfo.title, onComplete]);
+  }, [isIELTS, timeUp, timeUpSubmitted, questions.length, answers, selections, timeElapsed, quizInfo.title, onComplete, questions, readingPassage]);
 
   if (isIELTS && !ieltsStarted && !isLoading && questions.length === 0) {
     return (
@@ -265,51 +267,47 @@ export function QuizInterface({ courseId, onComplete, onBack, questionCount: pro
   const progress = ((currentQuestion + 1) / questions.length) * 100;
 
   const handleAnswerSelect = (index: number) => {
-    if (timeUp || showFeedback) return;
+    if (timeUp) return;
     setSelectedAnswer(index);
   };
 
-  const handleSubmitAnswer = () => {
-    if (selectedAnswer === null || timeUp) return;
-    const isCorrect = selectedAnswer === currentQ.correctAnswer;
-    setAnswers(a => {
-      const n = [...a];
-      n[currentQuestion] = isCorrect;
-      return n;
-    });
-    setSelections(s => {
-      const n = [...s];
-      n[currentQuestion] = selectedAnswer;
-      return n;
-    });
-    setShowFeedback(true);
+  /** Persist current selection when navigating away */
+  const saveCurrentSelection = () => {
+    if (selectedAnswer === null) return;
+    const q = questions[currentQuestion];
+    if (!q) return;
+    const isCorrect = selectedAnswer === q.correctAnswer;
+    setAnswers(a => { const n = [...a]; n[currentQuestion] = isCorrect; return n; });
+    setSelections(s => { const n = [...s]; n[currentQuestion] = selectedAnswer; return n; });
   };
 
-  const handlePrev = () => {
-    if (timeUp || currentQuestion <= 0) return;
-    const prev = currentQuestion - 1;
-    setCurrentQuestion(prev);
-    setSelectedAnswer(selections[prev] ?? null);
-    setShowFeedback(answers[prev] !== null && answers[prev] !== undefined);
-  };
-
-  const handleGoToQuestion = (idx: number) => {
-    if (timeUp || idx < 0 || idx >= questions.length || idx === currentQuestion) return;
-    setCurrentQuestion(idx);
-    setSelectedAnswer(selections[idx] ?? null);
-    setShowFeedback(answers[idx] !== null && answers[idx] !== undefined);
-  };
-
+  /** Save selection and move to next (no feedback until results) */
   const handleNext = () => {
     if (timeUp) return;
+    if (selectedAnswer !== null) {
+      const isCorrect = selectedAnswer === currentQ.correctAnswer;
+      setAnswers(a => {
+        const n = [...a];
+        n[currentQuestion] = isCorrect;
+        return n;
+      });
+      setSelections(s => {
+        const n = [...s];
+        n[currentQuestion] = selectedAnswer;
+        return n;
+      });
+    }
     if (currentQuestion < questions.length - 1) {
       const next = currentQuestion + 1;
       setCurrentQuestion(next);
       setSelectedAnswer(selections[next] ?? null);
-      setShowFeedback(answers[next] !== null && answers[next] !== undefined);
     } else {
-      const correctCount = answers.filter((a): a is boolean => a === true).length;
+      const isCurrentCorrect = selectedAnswer !== null && selectedAnswer === currentQ.correctAnswer;
+      const prevCorrect = answers.filter((a, i) => i !== currentQuestion && a === true).length;
+      const correctCount = prevCorrect + (isCurrentCorrect ? 1 : 0);
       const score = Math.round((correctCount / questions.length) * 100);
+      const finalSelections = [...selections];
+      if (selectedAnswer !== null) finalSelections[currentQuestion] = selectedAnswer;
       onComplete({
         score,
         totalQuestions: questions.length,
@@ -317,10 +315,25 @@ export function QuizInterface({ courseId, onComplete, onBack, questionCount: pro
         timeSpent: timeElapsed,
         courseTitle: quizInfo.title,
         questions: questions,
-        userAnswers: selections,
+        userAnswers: finalSelections,
         readingPassage: readingPassage || undefined,
       });
     }
+  };
+
+  const handlePrev = () => {
+    if (timeUp || currentQuestion <= 0) return;
+    saveCurrentSelection();
+    const prev = currentQuestion - 1;
+    setCurrentQuestion(prev);
+    setSelectedAnswer(selections[prev] ?? null);
+  };
+
+  const handleGoToQuestion = (idx: number) => {
+    if (timeUp || idx < 0 || idx >= questions.length || idx === currentQuestion) return;
+    saveCurrentSelection();
+    setCurrentQuestion(idx);
+    setSelectedAnswer(selections[idx] ?? null);
   };
 
   const formatTime = (seconds: number) => {
@@ -408,81 +421,35 @@ export function QuizInterface({ courseId, onComplete, onBack, questionCount: pro
             {currentQ.question}
           </h2>
 
-          {/* Options */}
+          {/* Options - no feedback during quiz */}
           <div className="space-y-3 mb-6">
             {currentQ.options.map((option, index) => {
               const isSelected = selectedAnswer === index;
-              const isCorrect = index === currentQ.correctAnswer;
-              const showCorrect = showFeedback && isCorrect;
-              const showWrong = showFeedback && isSelected && !isCorrect;
-
               return (
                 <motion.button
                   key={index}
                   onClick={() => handleAnswerSelect(index)}
-                  disabled={showFeedback || timeUp}
-                  whileHover={{ scale: (showFeedback || timeUp) ? 1 : 1.02 }}
-                  whileTap={{ scale: (showFeedback || timeUp) ? 1 : 0.98 }}
+                  disabled={timeUp}
+                  whileHover={{ scale: timeUp ? 1 : 1.02 }}
+                  whileTap={{ scale: timeUp ? 1 : 0.98 }}
                   className={`
-                    w-full p-4 rounded-xl border-2 text-left transition-all flex items-center justify-between
-                    ${showCorrect ? 'border-green-500 bg-green-50' : ''}
-                    ${showWrong ? 'border-red-500 bg-red-50' : ''}
-                    ${isSelected && !showFeedback ? 'border-indigo-600 bg-indigo-50' : ''}
-                    ${!isSelected && !showFeedback && !showCorrect ? 'border-gray-200 hover:border-indigo-300 bg-white' : ''}
-                    ${showFeedback && !showCorrect && !showWrong ? 'border-gray-200 bg-gray-50 opacity-50' : ''}
+                    w-full p-4 rounded-xl border-2 text-left transition-all
+                    ${isSelected ? 'border-indigo-600 bg-indigo-50' : 'border-gray-200 hover:border-indigo-300 bg-white'}
                   `}
                 >
                   <span className="font-medium text-gray-900">{option}</span>
-                  {showCorrect && <CheckCircle className="w-6 h-6 text-green-600" />}
-                  {showWrong && <XCircle className="w-6 h-6 text-red-600" />}
                 </motion.button>
               );
             })}
           </div>
 
-          {/* AI Feedback */}
-          <AnimatePresence>
-            {showFeedback && (
-              <motion.div
-                initial={{ opacity: 0, height: 0 }}
-                animate={{ opacity: 1, height: 'auto' }}
-                exit={{ opacity: 0, height: 0 }}
-                className={`rounded-xl p-6 ${
-                  selectedAnswer === currentQ.correctAnswer
-                    ? 'bg-green-50 border-2 border-green-200'
-                    : 'bg-red-50 border-2 border-red-200'
-                }`}
-              >
-                <div className="flex items-start gap-3">
-                  <div className={`w-10 h-10 rounded-full flex items-center justify-center flex-shrink-0 ${
-                    selectedAnswer === currentQ.correctAnswer
-                      ? 'bg-green-500'
-                      : 'bg-red-500'
-                  }`}>
-                    {selectedAnswer === currentQ.correctAnswer ? (
-                      <CheckCircle className="w-6 h-6 text-white" />
-                    ) : (
-                      <XCircle className="w-6 h-6 text-white" />
-                    )}
-                  </div>
-                  <div className="flex-1">
-                    <h3 className="font-bold text-gray-900 mb-2">
-                      {selectedAnswer === currentQ.correctAnswer ? t('quiz.correct') : t('quiz.notQuiteRight')}
-                    </h3>
-                    <p className="text-gray-700">{currentQ.explanation}</p>
-                  </div>
-                </div>
-              </motion.div>
-            )}
-          </AnimatePresence>
-
-          {/* Action Buttons */}
+          {/* Action Buttons - Next only, no Check Answer */}
           <div className="flex gap-4 mt-6 flex-wrap">
             {timeUp ? (
               <div className="w-full py-3 rounded-xl font-semibold bg-red-100 text-red-800 text-center">
                 {t('quiz.submitting')}
               </div>
-            ) : !showFeedback ? (
+            ) : (
               <>
                 <button
                   onClick={onBack}
@@ -500,7 +467,7 @@ export function QuizInterface({ courseId, onComplete, onBack, questionCount: pro
                   </button>
                 )}
                 <button
-                  onClick={handleSubmitAnswer}
+                  onClick={handleNext}
                   disabled={selectedAnswer === null}
                   className={`
                     flex-1 min-w-0 px-6 py-3 rounded-xl font-semibold transition-all flex items-center justify-center gap-2
@@ -509,25 +476,6 @@ export function QuizInterface({ courseId, onComplete, onBack, questionCount: pro
                       : 'bg-gray-200 text-gray-400 cursor-not-allowed'
                     }
                   `}
-                >
-                  {t('quiz.checkAnswer')}
-                  <ChevronRight className="w-5 h-5" />
-                </button>
-              </>
-            ) : (
-              <>
-                {currentQuestion > 0 && (
-                  <button
-                    onClick={handlePrev}
-                    className="px-6 py-3 border-2 border-indigo-200 rounded-xl font-semibold text-indigo-700 hover:bg-indigo-50 transition-all flex items-center gap-2"
-                  >
-                    <ChevronLeft className="w-5 h-5" />
-                    {t('quiz.previous')}
-                  </button>
-                )}
-                <button
-                  onClick={handleNext}
-                  className="flex-1 min-w-0 bg-gradient-to-r from-indigo-600 to-purple-600 text-white px-6 py-3 rounded-xl font-semibold hover:shadow-lg transition-all flex items-center justify-center gap-2"
                 >
                   {currentQuestion < questions.length - 1 ? t('quiz.nextQuestion') : t('quiz.viewResults')}
                   <ChevronRight className="w-5 h-5" />
@@ -538,13 +486,11 @@ export function QuizInterface({ courseId, onComplete, onBack, questionCount: pro
         </motion.div>
       </AnimatePresence>
 
-      {/* Answer Tracker - clickable question numbers */}
+      {/* Answer Tracker - only answered/current, no correct/wrong until results */}
       <div className="flex gap-2 justify-center flex-wrap">
         {questions.map((_, index) => {
-          const answered = answers[index] !== null && answers[index] !== undefined;
+          const answered = selections[index] !== null && selections[index] !== undefined;
           const isCurrent = index === currentQuestion;
-          const correct = answered && answers[index] === true;
-          const wrong = answered && answers[index] === false;
           return (
             <button
               key={index}
@@ -552,10 +498,9 @@ export function QuizInterface({ courseId, onComplete, onBack, questionCount: pro
               onClick={() => handleGoToQuestion(index)}
               disabled={timeUp}
               className={`
-                w-10 h-10 rounded-lg flex items-center justify-center font-semibold text-sm transition-all
-                shrink-0
+                w-10 h-10 rounded-lg flex items-center justify-center font-semibold text-sm transition-all shrink-0
                 ${isCurrent ? 'bg-indigo-600 text-white ring-4 ring-indigo-200' : ''}
-                ${answered && !isCurrent ? (correct ? 'bg-green-500 text-white hover:bg-green-600' : 'bg-red-500 text-white hover:bg-red-600') : ''}
+                ${answered && !isCurrent ? 'bg-indigo-100 text-indigo-700 hover:bg-indigo-200' : ''}
                 ${!answered && !isCurrent ? 'bg-gray-200 text-gray-500 hover:bg-gray-300' : ''}
                 ${timeUp ? 'cursor-default' : 'cursor-pointer'}
               `}

@@ -77,6 +77,84 @@ export interface AIFeedback {
 
 const ASSIGNMENTS_KEY = 'aafs_assignments';
 const SUBMISSIONS_KEY = 'aafs_submissions';
+const ASSIGNED_KEY = 'aafs_assigned';
+
+export interface AssignedAssignment {
+  assignmentId: string;
+  studentId: string;
+  assignedAt: string;
+  dueDate?: string;
+}
+
+function getAssigned(): AssignedAssignment[] {
+  const raw = localStorage.getItem(ASSIGNED_KEY);
+  return raw ? JSON.parse(raw) : [];
+}
+
+function setAssigned(items: AssignedAssignment[]) {
+  localStorage.setItem(ASSIGNED_KEY, JSON.stringify(items));
+}
+
+export const assignToStudents = (assignmentId: string, studentIds: string[], dueDate?: string): void => {
+  const assigned = getAssigned();
+  const filtered = assigned.filter(a => a.assignmentId !== assignmentId);
+  const now = new Date().toISOString();
+  for (const sid of studentIds) {
+    filtered.push({ assignmentId, studentId: sid, assignedAt: now, dueDate });
+  }
+  setAssigned(filtered);
+};
+
+export const getAssignedStudents = (assignmentId: string): string[] => {
+  return getAssigned()
+    .filter(a => a.assignmentId === assignmentId)
+    .map(a => a.studentId);
+};
+
+export const getAssignmentsForStudent = (studentId: string): AssignedAssignment[] => {
+  return getAssigned().filter(a => a.studentId === studentId);
+};
+
+export const getAssignment = (id: string): Assignment | undefined => {
+  return getAssignments().find(a => a.id === id);
+};
+
+// Instructor roster - students the instructor has added to their class
+const ROSTER_KEY = 'aafs_instructor_roster';
+
+function getRosterData(): Record<string, string[]> {
+  try {
+    const raw = localStorage.getItem(ROSTER_KEY);
+    return raw ? JSON.parse(raw) : {};
+  } catch {
+    return {};
+  }
+}
+
+function setRosterData(data: Record<string, string[]>) {
+  localStorage.setItem(ROSTER_KEY, JSON.stringify(data));
+}
+
+export const getInstructorRoster = (instructorId: string): string[] => {
+  const data = getRosterData();
+  return data[instructorId] || [];
+};
+
+export const addStudentsToRoster = (instructorId: string, studentIds: string[]): void => {
+  const data = getRosterData();
+  const current = data[instructorId] || [];
+  const added = new Set([...current]);
+  for (const id of studentIds) added.add(id);
+  data[instructorId] = Array.from(added);
+  setRosterData(data);
+};
+
+export const removeStudentFromRoster = (instructorId: string, studentId: string): void => {
+  const data = getRosterData();
+  const current = data[instructorId] || [];
+  data[instructorId] = current.filter(id => id !== studentId);
+  setRosterData(data);
+};
 
 // Get all assignments
 export const getAssignments = (): Assignment[] => {
@@ -152,6 +230,21 @@ export const getSubmissionsByStudent = (studentId: string): Submission[] => {
 // Get submissions by assignment
 export const getSubmissionsByAssignment = (assignmentId: string): Submission[] => {
   return getSubmissions().filter(s => s.assignmentId === assignmentId);
+};
+
+// Get submissions by instructor (all submissions to instructor's assignments)
+export const getSubmissionsByInstructor = (instructorId: string): Submission[] => {
+  const assignmentIds = getAssignmentsByInstructor(instructorId).map(a => a.id);
+  return getSubmissions().filter(s => assignmentIds.includes(s.assignmentId));
+};
+
+// Get unique students who have submitted to instructor's assignments
+export const getStudentsByInstructor = (instructorId: string): { studentId: string; studentName: string }[] => {
+  const subs = getSubmissionsByInstructor(instructorId);
+  const seen = new Set<string>();
+  return subs
+    .filter(s => !seen.has(s.studentId) && seen.add(s.studentId))
+    .map(s => ({ studentId: s.studentId, studentName: s.studentName }));
 };
 
 // Create submission

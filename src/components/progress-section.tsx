@@ -1,9 +1,6 @@
 import { motion } from 'motion/react';
 import { useState, useEffect, useRef } from 'react';
-import { 
-  TrendingUp, Calendar, Award, Target, BarChart3, Clock, 
-  CheckCircle, Star, Flame, Brain, Sparkles, Info
-} from 'lucide-react';
+import { Brain, Sparkles } from 'lucide-react';
 import { 
   LineChart, Line, BarChart, Bar, PieChart, Pie, Cell,
   XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer 
@@ -31,11 +28,6 @@ export function ProgressSection() {
   const [insight, setInsight] = useState<string>('');
   const [loadingInsight, setLoadingInsight] = useState(true);
   const hasLoadedOnceRef = useRef(false);
-  const [hoveredCard, setHoveredCard] = useState<string | null>(null);
-  const [hoveredLine, setHoveredLine] = useState<string | null>(null);
-
-  // Weekly goal (50 lessons per week)
-  const WEEKLY_GOAL = 50;
 
   useEffect(() => {
     const updateStats = () => {
@@ -67,7 +59,9 @@ export function ProgressSection() {
   useEffect(() => {
     const shouldGenerateInsight = () => {
       try {
-        const raw = localStorage.getItem('assessai_last_insight_meta');
+        const user = getCurrentUser();
+        const insightKey = user ? `assessai_last_insight_meta_${user.id}` : 'assessai_last_insight_meta';
+        const raw = localStorage.getItem(insightKey);
         const now = new Date();
         const THREE_DAYS_MS = 3 * 24 * 60 * 60 * 1000;
 
@@ -146,10 +140,12 @@ export function ProgressSection() {
         setInsight(insightText);
         hasLoadedOnceRef.current = true;
 
-        // Son insight meta bilgisini kaydet
+        // Son insight meta bilgisini kaydet (kullanıcı bazlı)
         try {
+          const user = getCurrentUser();
+          const insightKey = user ? `assessai_last_insight_meta_${user.id}` : 'assessai_last_insight_meta';
           localStorage.setItem(
-            'assessai_last_insight_meta',
+            insightKey,
             JSON.stringify({
               lastActivities: stats.totalActivities,
               generatedAt: new Date().toISOString(),
@@ -193,26 +189,6 @@ export function ProgressSection() {
     return activityDate >= twoWeeksAgo && activityDate < weekAgo;
   });
 
-  const lessonsCompleted = activities.length;
-  const lessonsThisWeek = thisWeekActivities.length;
-  const lessonsLastWeek = lastWeekActivities.length;
-  const lessonsChange = lessonsLastWeek > 0 
-    ? lessonsThisWeek - lessonsLastWeek 
-    : lessonsThisWeek;
-
-  // Estimate study time (15 minutes per activity)
-  const totalStudyHours = Math.round((activities.length * 15) / 60);
-  const studyTimeThisWeek = Math.round((lessonsThisWeek * 15) / 60);
-
-  // Calculate improvement (compare this week vs last week average)
-  const thisWeekAvg = thisWeekActivities.length > 0
-    ? Math.round(thisWeekActivities.reduce((sum, a) => sum + a.score, 0) / thisWeekActivities.length)
-    : 0;
-  const lastWeekAvg = lastWeekActivities.length > 0
-    ? Math.round(lastWeekActivities.reduce((sum, a) => sum + a.score, 0) / lastWeekActivities.length)
-    : 0;
-  const improvement = lastWeekAvg > 0 ? thisWeekAvg - lastWeekAvg : 0;
-
   // Prepare weekly data with last week comparison
   const getLastWeekData = () => {
     const activities = getActivities();
@@ -255,17 +231,6 @@ export function ProgressSection() {
     lastWeekScore: lastWeekData[index]?.averageScore || 0,
   }));
 
-  // Card hover messages
-  const cardHoverMessages: Record<string, string> = {
-    lessons: `Toplam ${lessonsCompleted} aktivite tamamladın. Bu hafta ${lessonsThisWeek} aktivite yaptın.`,
-    time: `Toplam ${totalStudyHours} saat çalışma süren var. Bu hafta ${studyTimeThisWeek} saat çalıştın.`,
-    improvement: `Geçen haftaya göre ${improvement > 0 ? '+' : ''}${improvement}% iyileşme gösterdin.`,
-    skills: `Tüm becerilerin ortalaması ${Math.round(skillsData.reduce((sum, s) => sum + s.value, 0) / skillsData.length)}%.`,
-  };
-
-  // Weekly goal progress
-  const weeklyGoalProgress = Math.min(100, Math.round((lessonsThisWeek / WEEKLY_GOAL) * 100));
-
   return (
     <div className="max-w-[1400px] mx-auto px-4 sm:px-6 lg:px-8 py-8">
       {/* Header */}
@@ -304,126 +269,6 @@ export function ProgressSection() {
           </div>
         </div>
       </motion.div>
-
-      {/* Overview Cards - Progress-specific metrics with Goal Tracking */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
-        <motion.div
-          initial={{ opacity: 0, y: 20 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ delay: 0.1 }}
-          className="bg-gradient-to-br from-blue-500 to-blue-600 rounded-xl p-4 text-white shadow-lg h-full relative group"
-          onMouseEnter={() => setHoveredCard('lessons')}
-          onMouseLeave={() => setHoveredCard(null)}
-        >
-          <div className="flex items-center justify-between mb-2">
-            <div className="p-2 bg-white/20 rounded-lg backdrop-blur-sm">
-              <CheckCircle className="w-5 h-5" />
-            </div>
-            <TrendingUp className="w-4 h-4 opacity-60" />
-          </div>
-          <div className="text-2xl font-bold mb-0.5">{lessonsCompleted}</div>
-          <div className="text-blue-100 text-xs mb-1">{t('progress.lessonsCompleted')}</div>
-          <div className="text-xs text-blue-200 font-semibold mb-2">
-            {lessonsChange > 0 ? '+' : ''}{lessonsChange} {t('progress.thisWeek')}
-          </div>
-          {/* Goal Progress Bar */}
-          <div className="mt-2">
-            <div className="flex items-center justify-between text-xs mb-1">
-              <span className="text-blue-200">Weekly Goal</span>
-              <span className="text-blue-100 font-semibold">{lessonsThisWeek} / {WEEKLY_GOAL}</span>
-            </div>
-            <div className="w-full bg-white/20 rounded-full h-2">
-              <motion.div
-                initial={{ width: 0 }}
-                animate={{ width: `${weeklyGoalProgress}%` }}
-                transition={{ duration: 0.5 }}
-                className="bg-white rounded-full h-2"
-              />
-            </div>
-          </div>
-          {/* Hover Tooltip */}
-          {hoveredCard === 'lessons' && (
-            <div className="absolute bottom-full left-0 mb-2 p-2 bg-gray-900 text-white text-xs rounded-lg whitespace-nowrap z-10">
-              {cardHoverMessages.lessons}
-            </div>
-          )}
-        </motion.div>
-
-        <motion.div
-          initial={{ opacity: 0, y: 20 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ delay: 0.2 }}
-          className="bg-gradient-to-br from-purple-500 to-purple-600 rounded-xl p-4 text-white shadow-lg h-full relative group"
-          onMouseEnter={() => setHoveredCard('time')}
-          onMouseLeave={() => setHoveredCard(null)}
-        >
-          <div className="flex items-center justify-between mb-2">
-            <div className="p-2 bg-white/20 rounded-lg backdrop-blur-sm">
-              <Clock className="w-5 h-5" />
-            </div>
-            <BarChart3 className="w-4 h-4 opacity-60" />
-          </div>
-          <div className="text-2xl font-bold mb-0.5">{totalStudyHours}h</div>
-          <div className="text-purple-100 text-xs mb-1">{t('progress.totalStudyTime')}</div>
-          <div className="text-xs text-purple-200 font-semibold">{studyTimeThisWeek}h {t('progress.thisWeek')}</div>
-          {/* Hover Tooltip */}
-          {hoveredCard === 'time' && (
-            <div className="absolute bottom-full left-0 mb-2 p-2 bg-gray-900 text-white text-xs rounded-lg whitespace-nowrap z-10">
-              {cardHoverMessages.time}
-            </div>
-          )}
-        </motion.div>
-
-        <motion.div
-          initial={{ opacity: 0, y: 20 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ delay: 0.3 }}
-          className="bg-gradient-to-br from-green-500 to-green-600 rounded-xl p-4 text-white shadow-lg h-full relative group"
-          onMouseEnter={() => setHoveredCard('improvement')}
-          onMouseLeave={() => setHoveredCard(null)}
-        >
-          <div className="flex items-center justify-between mb-2">
-            <div className="p-2 bg-white/20 rounded-lg backdrop-blur-sm">
-              <Target className="w-5 h-5" />
-            </div>
-            <Award className="w-4 h-4 opacity-60" />
-          </div>
-          <div className="text-2xl font-bold mb-0.5">{improvement > 0 ? '+' : ''}{improvement}%</div>
-          <div className="text-green-100 text-xs mb-1">Weekly Improvement</div>
-          <div className="text-xs text-green-200 font-semibold">vs last week</div>
-          {/* Hover Tooltip */}
-          {hoveredCard === 'improvement' && (
-            <div className="absolute bottom-full left-0 mb-2 p-2 bg-gray-900 text-white text-xs rounded-lg whitespace-nowrap z-10">
-              {cardHoverMessages.improvement}
-            </div>
-          )}
-        </motion.div>
-
-        <motion.div
-          initial={{ opacity: 0, y: 20 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ delay: 0.4 }}
-          className="bg-gradient-to-br from-indigo-500 to-indigo-600 rounded-xl p-4 text-white shadow-lg h-full relative group"
-          onMouseEnter={() => setHoveredCard('skills')}
-          onMouseLeave={() => setHoveredCard(null)}
-        >
-          <div className="flex items-center justify-between mb-2">
-            <div className="p-2 bg-white/20 rounded-lg backdrop-blur-sm">
-              <BarChart3 className="w-5 h-5" />
-            </div>
-            <Star className="w-4 h-4 opacity-60" />
-          </div>
-          <div className="text-2xl font-bold mb-0.5">{Math.round(skillsData.reduce((sum, s) => sum + s.value, 0) / skillsData.length)}%</div>
-          <div className="text-indigo-100 text-xs mb-1">Skills Average</div>
-          <div className="text-xs text-indigo-200 font-semibold">All skills</div>
-          {/* Hover Tooltip */}
-          {hoveredCard === 'skills' && (
-            <div className="absolute bottom-full left-0 mb-2 p-2 bg-gray-900 text-white text-xs rounded-lg whitespace-nowrap z-10">
-              {cardHoverMessages.skills}
-            </div>
-          )}
-        </motion.div>
-      </div>
 
       {/* Charts Section */}
       <div className="grid lg:grid-cols-2 gap-8 mb-8">

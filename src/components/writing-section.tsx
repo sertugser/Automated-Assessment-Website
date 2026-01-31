@@ -21,10 +21,12 @@ import {
 } from '../lib/ai-services';
 import { saveActivity, getWritingStats, getActivitiesByType, getUserStats, getActivities } from '../lib/user-progress';
 import { getCurrentUser } from '../lib/auth';
+import { createSubmission, getAssignment } from '../lib/assignments';
 import { toast } from 'sonner';
 
 interface WritingSectionProps {
   initialActivityId?: string | null;
+  assignmentId?: string | null;
 }
 
 const writingPrompts = [
@@ -117,7 +119,7 @@ const formatActivityDate = (dateString: string): string => {
   }
 };
 
-export function WritingSection({ initialActivityId }: WritingSectionProps) {
+export function WritingSection({ initialActivityId, assignmentId }: WritingSectionProps) {
   const [selectedPrompt, setSelectedPrompt] = useState<number | null>(null);
   const [essayText, setEssayText] = useState('');
   const [wordCount, setWordCount] = useState(0);
@@ -228,6 +230,17 @@ export function WritingSection({ initialActivityId }: WritingSectionProps) {
     setAnalysisSourceText(text);
     handleTextChange(text);
   }, [initialActivityId]);
+
+  // When coming from homework assignment, load assignment instructions
+  useEffect(() => {
+    if (!assignmentId) return;
+    const assignment = getAssignment(assignmentId);
+    if (assignment && !essayText.trim()) {
+      const prompt = assignment.instructions || assignment.description || '';
+      if (prompt) handleTextChange(prompt);
+      setSelectedPrompt(null); // Use assignment, not a regular prompt
+    }
+  }, [assignmentId]);
 
   useEffect(() => {
     const loadTips = async () => {
@@ -557,16 +570,34 @@ export function WritingSection({ initialActivityId }: WritingSectionProps) {
       
       // Save writing activity to progress tracking
       const selectedPromptData = writingPrompts.find(p => p.id === selectedPrompt);
+      const courseTitle = selectedPromptData?.title || 'Writing Practice';
       saveActivity({
         type: 'writing',
         score: computedOverall,
-        courseTitle: selectedPromptData?.title || 'Writing Practice',
+        courseTitle,
         wordCount: wordCount,
         essayText: essayText,
         correctedText: simpleGemini.corrected_text,
         writingSimpleAnalysis: simpleGemini,
         writingDetailedFeedback: normalizedFeedback,
       });
+
+      // If this was an instructor assignment, create submission for instructor review
+      if (assignmentId) {
+        const assignment = getAssignment(assignmentId);
+        const user = getCurrentUser();
+        if (assignment && user) {
+          createSubmission({
+            assignmentId,
+            studentId: user.id,
+            studentName: user.name,
+            status: 'completed',
+            content: essayText,
+            aiScore: computedOverall,
+            aiFeedback: normalizedFeedback,
+          });
+        }
+      }
 
       // After successful submit, update topic suggestions dynamically
       if (selectedPrompt != null) {

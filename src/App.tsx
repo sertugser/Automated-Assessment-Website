@@ -3,6 +3,7 @@ import { Toaster } from 'sonner';
 import { AuthPage } from './components/auth-page';
 import { LandingPage } from './components/landing-page';
 import { AssessmentPlatform } from './components/assessment-platform';
+import { InstructorPlatform } from './components/instructor-platform';
 import { PlacementTest } from './components/placement-test';
 import { getCurrentUser, logout, updateUser, type User, type UserRole, type CEFRLevel } from './lib/auth';
 
@@ -143,7 +144,11 @@ export default function App() {
 
   return (
     <>
-      <AssessmentPlatform onBack={handleBackToLanding} user={currentUser} />
+      {currentUser?.role === 'instructor' ? (
+        <InstructorPlatform onBack={handleBackToLanding} user={currentUser} />
+      ) : (
+        <AssessmentPlatform onBack={handleBackToLanding} user={currentUser} />
+      )}
       <Toaster position="top-right" richColors />
     </>
   );

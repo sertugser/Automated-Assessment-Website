@@ -1,5 +1,23 @@
 // User Progress Tracking System
-// Stores and calculates real user statistics
+// Stores and calculates real user statistics (per-user)
+
+import { getCurrentUser } from './auth';
+
+const STORAGE_PREFIX = 'user_progress_activities_';
+const STREAK_PREFIX = 'user_streak_data_';
+
+function getStorageKey(userId: string): string {
+  return `${STORAGE_PREFIX}${userId}`;
+}
+
+function getStreakStorageKey(userId: string): string {
+  return `${STREAK_PREFIX}${userId}`;
+}
+
+function getCurrentUserId(): string | null {
+  const user = getCurrentUser();
+  return user?.id ?? null;
+}
 
 export interface UserActivity {
   id: string;
@@ -46,33 +64,36 @@ export interface UserStats {
   lastActivityDate: string | null;
 }
 
-const STORAGE_KEY = 'user_progress_activities';
-const STREAK_KEY = 'user_streak_data';
-
 /**
  * Save user activity (quiz, writing, or speaking result)
  */
 export const saveActivity = (activity: Omit<UserActivity, 'id' | 'date'>): void => {
+  const userId = getCurrentUserId();
+  if (!userId) return;
+
   const activities = getActivities();
   const newActivity: UserActivity = {
     ...activity,
     id: `activity_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
     date: new Date().toISOString(),
   };
-  
+
   activities.push(newActivity);
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(activities));
-  
+  localStorage.setItem(getStorageKey(userId), JSON.stringify(activities));
+
   // Update streak
-  updateStreak();
+  updateStreak(userId);
 };
 
 /**
- * Get all user activities
+ * Get all user activities for the current user
  */
 export const getActivities = (): UserActivity[] => {
+  const userId = getCurrentUserId();
+  if (!userId) return [];
+
   try {
-    const stored = localStorage.getItem(STORAGE_KEY);
+    const stored = localStorage.getItem(getStorageKey(userId));
     return stored ? JSON.parse(stored) : [];
   } catch {
     return [];
@@ -127,14 +148,17 @@ export const calculateAverageScore = (activities: UserActivity[]): number => {
  */
 export const calculateStreak = (activities: UserActivity[]): number => {
   if (activities.length === 0) return 0;
-  
+
+  const userId = getCurrentUserId();
+  if (!userId) return 0;
+
   // Sort activities by date (newest first)
-  const sorted = [...activities].sort((a, b) => 
+  const sorted = [...activities].sort((a, b) =>
     new Date(b.date).getTime() - new Date(a.date).getTime()
   );
-  
+
   // Get streak data from localStorage
-  const streakData = getStreakData();
+  const streakData = getStreakData(userId);
   const today = new Date();
   today.setHours(0, 0, 0, 0);
   
@@ -161,26 +185,28 @@ export const calculateStreak = (activities: UserActivity[]): number => {
 /**
  * Update streak data
  */
-const updateStreak = (): void => {
+const updateStreak = (userId: string): void => {
   const activities = getActivities();
   const streak = calculateStreak(activities);
   const today = new Date().toISOString().split('T')[0];
-  
+
   const streakData = {
     currentStreak: streak,
     lastActivityDate: today,
-    longestStreak: Math.max(streak, getStreakData().longestStreak),
+    longestStreak: Math.max(streak, getStreakData(userId).longestStreak),
   };
-  
-  localStorage.setItem(STREAK_KEY, JSON.stringify(streakData));
+
+  localStorage.setItem(getStreakStorageKey(userId), JSON.stringify(streakData));
 };
 
 /**
  * Get streak data from localStorage
  */
-const getStreakData = (): { currentStreak: number; lastActivityDate: string | null; longestStreak: number } => {
+const getStreakData = (userId: string): { currentStreak: number; lastActivityDate: string | null; longestStreak: number } => {
+  if (!userId) return { currentStreak: 0, lastActivityDate: null, longestStreak: 0 };
+
   try {
-    const stored = localStorage.getItem(STREAK_KEY);
+    const stored = localStorage.getItem(getStreakStorageKey(userId));
     if (stored) {
       const data = JSON.parse(stored);
       // Check if streak should be reset (more than 1 day gap)
@@ -966,9 +992,11 @@ export const getAchievements = (): Achievement[] => {
 };
 
 /**
- * Clear all user progress (for testing/reset)
+ * Clear all user progress for the current user (for testing/reset)
  */
 export const clearUserProgress = (): void => {
-  localStorage.removeItem(STORAGE_KEY);
-  localStorage.removeItem(STREAK_KEY);
+  const userId = getCurrentUserId();
+  if (!userId) return;
+  localStorage.removeItem(getStorageKey(userId));
+  localStorage.removeItem(getStreakStorageKey(userId));
 };
