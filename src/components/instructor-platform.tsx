@@ -25,8 +25,9 @@ import {
   type AIFeedback,
 } from '../lib/assignments';
 import { getClassAnalytics } from '../lib/analytics';
-import { getUsers } from '../lib/auth';
+import { getUsers, getCurrentUser } from '../lib/auth';
 import { useLanguage } from '../contexts/LanguageContext';
+import { ProfilePage } from './profile-page';
 
 const COURSE_OPTIONS = [
   { id: 'grammar-basics', label: 'Grammar Basics' },
@@ -205,6 +206,11 @@ export function InstructorPlatform({ onBack, user }: InstructorPlatformProps) {
     if (window.confirm(t('instructor.logoutConfirm'))) onBack();
   };
 
+  const handleUpdateUser = (updatedUser: UserType) => {
+    // Update user state if needed
+    // The ProfilePage component handles its own state updates via localStorage
+  };
+
   const getAssignmentById = (id: string) => assignments.find(a => a.id === id);
   const getCourseLabel = (courseId: string) => COURSE_OPTIONS.find(c => c.id === courseId)?.label || courseId;
 
@@ -218,9 +224,10 @@ export function InstructorPlatform({ onBack, user }: InstructorPlatformProps) {
   return (
     <div className="min-h-screen bg-gradient-to-br from-indigo-50 via-purple-50 to-pink-50">
       <header className="bg-white/80 backdrop-blur-md border-b border-gray-200 sticky top-0 z-40">
-        <div className="max-w-[1400px] mx-auto px-4 sm:px-6 lg:px-8">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="flex items-center justify-between h-20">
-            <div className="flex items-center gap-6">
+            {/* Left: Logo and Badge */}
+            <div className="flex items-center gap-4 flex-1">
               <button
                 onClick={() => setCurrentScreen('dashboard')}
                 className="text-xl font-bold text-gray-900 hover:text-purple-600 transition-colors"
@@ -230,21 +237,25 @@ export function InstructorPlatform({ onBack, user }: InstructorPlatformProps) {
               <span className="text-sm text-purple-600 font-medium bg-purple-100 px-2.5 py-1 rounded-full">
                 {t('instructor.instructorPanel')}
               </span>
-              <nav className="flex items-center gap-1">
-                {navItems.map((item) => (
-                  <button
-                    key={item.id}
-                    onClick={() => setCurrentScreen(item.id)}
-                    className={`flex items-center gap-1.5 px-3 py-2 text-sm font-medium rounded-lg transition-all ${
-                      currentScreen === item.id
-                        ? 'text-purple-700 bg-purple-100'
-                        : 'text-gray-600 hover:text-gray-900 hover:bg-gray-50'
-                    }`}
-                  >
-                    <item.icon className="w-4 h-4" />
-                    {item.label}
-                  </button>
-                ))}
+              
+              {/* Navigation Tabs - Centered */}
+              <nav className="flex items-center justify-center flex-1 ml-6">
+                <div className="flex items-center w-full max-w-4xl gap-0">
+                  {navItems.map((item) => (
+                    <button
+                      key={item.id}
+                      onClick={() => setCurrentScreen(item.id)}
+                      className={`flex flex-1 items-center justify-center gap-1 px-2.5 py-2 text-sm font-medium transition-all relative rounded-lg ${
+                        currentScreen === item.id
+                          ? 'text-purple-700 bg-purple-100'
+                          : 'text-gray-600 hover:text-gray-900 hover:bg-gray-50'
+                      }`}
+                    >
+                      <item.icon className="w-4 h-4" />
+                      <span>{item.label}</span>
+                    </button>
+                  ))}
+                </div>
               </nav>
             </div>
             <div className="relative" data-profile-dropdown>
@@ -257,9 +268,12 @@ export function InstructorPlatform({ onBack, user }: InstructorPlatformProps) {
                 }`}
               >
                 {user?.avatar ? (
-                  <div className="w-10 h-10 rounded-full overflow-hidden bg-gray-200 shrink-0">
-                    <img src={user.avatar} alt="" className="block w-full h-full object-cover object-center" />
-                  </div>
+                  <div 
+                    className="w-10 h-10 rounded-full overflow-hidden bg-gray-200 shrink-0"
+                    style={{ backgroundImage: `url(${user.avatar})`, backgroundSize: 'cover', backgroundPosition: 'center' }}
+                    role="img"
+                    aria-label={user.name}
+                  />
                 ) : (
                   <div className="w-10 h-10 rounded-full bg-gray-200 flex items-center justify-center shrink-0">
                     <User className="w-5 h-5 text-gray-600" />
@@ -667,16 +681,13 @@ export function InstructorPlatform({ onBack, user }: InstructorPlatformProps) {
           </div>
         )}
 
-        {/* Profile placeholder */}
-        {currentScreen === 'profile' && (
-          <motion.div
-            initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
-            className="bg-white rounded-2xl p-8 border-2 border-gray-200 shadow-lg"
-          >
-            <h1 className="text-4xl font-bold text-gray-900 mb-4">{t('profile')}</h1>
-            <p className="text-gray-600">{t('instructor.profileComingSoon')}</p>
-          </motion.div>
+        {/* Profile Page */}
+        {currentScreen === 'profile' && user && (
+          <ProfilePage
+            user={user}
+            onLogout={handleLogout}
+            onUpdateUser={handleUpdateUser}
+          />
         )}
       </main>
 
@@ -687,7 +698,7 @@ export function InstructorPlatform({ onBack, user }: InstructorPlatformProps) {
             initial={{ opacity: 0, scale: 0.98 }}
             animate={{ opacity: 1, scale: 1 }}
             transition={{ type: 'spring', damping: 25, stiffness: 300 }}
-            className="bg-white rounded-xl shadow-xl border border-gray-200 w-full max-w-lg max-h-[85vh] overflow-hidden flex flex-col"
+            className="bg-white rounded-xl shadow-xl border border-gray-200 w-full max-w-md max-h-[85vh] overflow-hidden flex flex-col"
           >
             <div className="p-4 border-b border-gray-100 shrink-0">
               <div className="flex items-center gap-3">

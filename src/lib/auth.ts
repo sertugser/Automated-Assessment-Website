@@ -31,6 +31,18 @@ const CURRENT_USER_KEY = 'aafs_current_user';
 export const ADMIN_EMAIL = import.meta.env.VITE_ADMIN_EMAIL || 'admin@aafs.com';
 export const ADMIN_PASSWORD = import.meta.env.VITE_ADMIN_PASSWORD || 'Admin@2026!';
 
+// Debug: Log admin credentials on module load (only in development)
+if (import.meta.env.DEV) {
+  console.log('[Auth] Admin credentials loaded:', {
+    email: ADMIN_EMAIL,
+    passwordSet: !!ADMIN_PASSWORD,
+    fromEnv: {
+      email: !!import.meta.env.VITE_ADMIN_EMAIL,
+      password: !!import.meta.env.VITE_ADMIN_PASSWORD,
+    }
+  });
+}
+
 // Demo account passwords (ensure they always exist for login)
 const DEMO_PASSWORDS: Record<string, string> = {
   'student@demo.com': 'Student@123',
@@ -184,16 +196,16 @@ export const login = (
 
   // If admin email is used, ensure user exists and has admin role
   if (email.toLowerCase() === ADMIN_EMAIL.toLowerCase()) {
-    const passwords = JSON.parse(localStorage.getItem('aafs_passwords') || '{}');
-    if (passwords[ADMIN_EMAIL] !== ADMIN_PASSWORD) {
-      passwords[ADMIN_EMAIL] = ADMIN_PASSWORD;
-      localStorage.setItem('aafs_passwords', JSON.stringify(passwords));
-    }
-
-    // Check password first
+    // Check password against environment variable (not localStorage)
+    // Admin password is always read from environment variables
     if (password !== ADMIN_PASSWORD) {
       throw new Error('Invalid password');
     }
+    
+    // Update localStorage password to match current ADMIN_PASSWORD (for consistency)
+    const passwords = JSON.parse(localStorage.getItem('aafs_passwords') || '{}');
+    passwords[ADMIN_EMAIL] = ADMIN_PASSWORD;
+    localStorage.setItem('aafs_passwords', JSON.stringify(passwords));
 
     // If user doesn't exist or is not admin, create/update admin user
     if (!user || user.role !== 'admin') {

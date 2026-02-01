@@ -18,25 +18,34 @@ interface ProfilePageProps {
 
 export function ProfilePage({ user, onLogout, onUpdateUser }: ProfilePageProps) {
   const [stats, setStats] = useState(getUserStats());
-  const [achievements, setAchievements] = useState<Achievement[]>(getAchievements());
+  // Only load achievements for students, not for instructors
+  const [achievements, setAchievements] = useState<Achievement[]>(
+    user.role !== 'instructor' ? getAchievements() : []
+  );
 
   useEffect(() => {
     // Update stats and achievements periodically
     const updateData = () => {
       setStats(getUserStats());
-      setAchievements(getAchievements());
+      // Only update achievements for students
+      if (user.role !== 'instructor') {
+        setAchievements(getAchievements());
+      }
     };
     
     updateData();
     const interval = setInterval(updateData, 2000);
     
     return () => clearInterval(interval);
-  }, []);
+  }, [user.role]);
   
   const { lang, setLang, t } = useLanguage();
   const [isEditing, setIsEditing] = useState(false);
   const [editedName, setEditedName] = useState(user.name);
-  const [activeTab, setActiveTab] = useState<'overview' | 'settings'>('overview');
+  // Instructors only see settings, students see both overview and settings
+  const [activeTab, setActiveTab] = useState<'overview' | 'settings'>(
+    user.role === 'instructor' ? 'settings' : 'overview'
+  );
   
   // Update avatar preview when user changes
   useEffect(() => {
@@ -245,8 +254,8 @@ export function ProfilePage({ user, onLogout, onUpdateUser }: ProfilePageProps) 
   };
 
   return (
-    <div className="min-h-screen bg-gray-50">
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+    <div className={user.role === 'instructor' ? '' : 'min-h-screen bg-gray-50'}>
+      <div className={`max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 ${user.role === 'instructor' ? 'py-0' : 'py-8'}`}>
         {/* Profile Header */}
         <motion.div
           initial={{ opacity: 0, y: 20 }}
@@ -372,96 +381,100 @@ export function ProfilePage({ user, onLogout, onUpdateUser }: ProfilePageProps) 
           </div>
         </motion.div>
 
-        {/* Tabs */}
-        <div className="mb-6">
-          <div className="flex gap-2 bg-white rounded-xl p-2 shadow-lg">
-            <button
-              onClick={() => setActiveTab('overview')}
-              className={`flex-1 py-3 px-6 rounded-lg font-semibold transition-all ${
-                activeTab === 'overview'
-                  ? 'bg-gradient-to-r from-indigo-600 to-purple-600 text-white shadow-lg'
-                  : 'text-gray-600 hover:bg-gray-50'
-              }`}
-            >
-              {t('profile.overview')}
-            </button>
-            <button
-              onClick={() => setActiveTab('settings')}
-              className={`flex-1 py-3 px-6 rounded-lg font-semibold transition-all ${
-                activeTab === 'settings'
-                  ? 'bg-gradient-to-r from-indigo-600 to-purple-600 text-white shadow-lg'
-                  : 'text-gray-600 hover:bg-gray-50'
-              }`}
-            >
-              {t('profile.settings')}
-            </button>
+        {/* Tabs - Only show for students, instructors only see settings */}
+        {user.role !== 'instructor' && (
+          <div className="mb-6">
+            <div className="flex gap-2 bg-white rounded-xl p-2 shadow-lg">
+              <button
+                onClick={() => setActiveTab('overview')}
+                className={`flex-1 py-3 px-6 rounded-lg font-semibold transition-all ${
+                  activeTab === 'overview'
+                    ? 'bg-gradient-to-r from-indigo-600 to-purple-600 text-white shadow-lg'
+                    : 'text-gray-600 hover:bg-gray-50'
+                }`}
+              >
+                {t('profile.overview')}
+              </button>
+              <button
+                onClick={() => setActiveTab('settings')}
+                className={`flex-1 py-3 px-6 rounded-lg font-semibold transition-all ${
+                  activeTab === 'settings'
+                    ? 'bg-gradient-to-r from-indigo-600 to-purple-600 text-white shadow-lg'
+                    : 'text-gray-600 hover:bg-gray-50'
+                }`}
+              >
+                {t('profile.settings')}
+              </button>
+            </div>
           </div>
-        </div>
+        )}
 
-        {/* Overview Tab */}
-        {activeTab === 'overview' && (
+        {/* Overview Tab - Only for students */}
+        {user.role !== 'instructor' && activeTab === 'overview' && (
           <div className="space-y-6">
-            {/* Achievements */}
-            <motion.div
-              initial={{ opacity: 0, y: 20 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ delay: 0.1 }}
-              className="bg-white rounded-2xl shadow-lg p-6"
-            >
-              <div className="flex items-center gap-2 mb-6">
-                <div className="p-2 bg-purple-100 rounded-lg">
-                  <Trophy className="w-5 h-5 text-purple-600" />
+            {/* Achievements - Only show for students, not for instructors */}
+            {user.role !== 'instructor' && (
+              <motion.div
+                initial={{ opacity: 0, y: 20 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ delay: 0.1 }}
+                className="bg-white rounded-2xl shadow-lg p-6"
+              >
+                <div className="flex items-center gap-2 mb-6">
+                  <div className="p-2 bg-purple-100 rounded-lg">
+                    <Trophy className="w-5 h-5 text-purple-600" />
+                  </div>
+                  <h2 className="text-xl font-bold text-gray-900">{t('profile.achievements')}</h2>
                 </div>
-                <h2 className="text-xl font-bold text-gray-900">{t('profile.achievements')}</h2>
-              </div>
 
-              <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-4">
-                {achievements.map((achievement) => {
-                  const IconComponent = getAchievementIcon(achievement.icon);
-                  return (
-                    <motion.div
-                      key={achievement.id}
-                      whileHover={{ scale: achievement.unlocked ? 1.02 : 1 }}
-                      className={`p-4 rounded-xl border-2 transition-all ${
-                        achievement.unlocked
-                          ? 'border-transparent bg-gradient-to-br from-gray-50 to-white hover:shadow-lg'
-                          : 'border-gray-200 bg-gray-50 opacity-60'
-                      }`}
-                    >
-                      <div className="flex items-start gap-3">
-                        <div className={`p-3 bg-gradient-to-br ${achievement.color} rounded-lg ${
-                          achievement.unlocked ? '' : 'grayscale'
-                        }`}>
-                          <IconComponent className="w-5 h-5 text-white" />
-                        </div>
-                        <div className="flex-1">
-                          <h3 className="font-bold text-gray-900 mb-1">{achievement.title}</h3>
-                          <p className="text-xs text-gray-600">{achievement.description}</p>
-                          {achievement.unlocked ? (
-                            <span className="inline-block mt-2 px-2 py-1 bg-green-100 text-green-700 text-xs font-bold rounded-full">
-                              {t('profile.unlocked')}
-                            </span>
-                          ) : (
-                            <div className="mt-2">
-                              <div className="flex items-center justify-between mb-1">
-                                <span className="text-xs text-gray-500">{t('profile.progress')}</span>
-                                <span className="text-xs font-semibold text-gray-700">{achievement.current} / {achievement.requirement}</span>
+                <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-4">
+                  {achievements.map((achievement) => {
+                    const IconComponent = getAchievementIcon(achievement.icon);
+                    return (
+                      <motion.div
+                        key={achievement.id}
+                        whileHover={{ scale: achievement.unlocked ? 1.02 : 1 }}
+                        className={`p-4 rounded-xl border-2 transition-all ${
+                          achievement.unlocked
+                            ? 'border-transparent bg-gradient-to-br from-gray-50 to-white hover:shadow-lg'
+                            : 'border-gray-200 bg-gray-50 opacity-60'
+                        }`}
+                      >
+                        <div className="flex items-start gap-3">
+                          <div className={`p-3 bg-gradient-to-br ${achievement.color} rounded-lg ${
+                            achievement.unlocked ? '' : 'grayscale'
+                          }`}>
+                            <IconComponent className="w-5 h-5 text-white" />
+                          </div>
+                          <div className="flex-1">
+                            <h3 className="font-bold text-gray-900 mb-1">{achievement.title}</h3>
+                            <p className="text-xs text-gray-600">{achievement.description}</p>
+                            {achievement.unlocked ? (
+                              <span className="inline-block mt-2 px-2 py-1 bg-green-100 text-green-700 text-xs font-bold rounded-full">
+                                {t('profile.unlocked')}
+                              </span>
+                            ) : (
+                              <div className="mt-2">
+                                <div className="flex items-center justify-between mb-1">
+                                  <span className="text-xs text-gray-500">{t('profile.progress')}</span>
+                                  <span className="text-xs font-semibold text-gray-700">{achievement.current} / {achievement.requirement}</span>
+                                </div>
+                                <div className="w-full bg-gray-200 rounded-full h-2">
+                                  <div 
+                                    className="bg-gradient-to-r from-indigo-500 to-purple-500 h-2 rounded-full transition-all"
+                                    style={{ width: `${achievement.progress}%` }}
+                                  />
+                                </div>
                               </div>
-                              <div className="w-full bg-gray-200 rounded-full h-2">
-                                <div 
-                                  className="bg-gradient-to-r from-indigo-500 to-purple-500 h-2 rounded-full transition-all"
-                                  style={{ width: `${achievement.progress}%` }}
-                                />
-                              </div>
-                            </div>
-                          )}
+                            )}
+                          </div>
                         </div>
-                      </div>
-                    </motion.div>
-                  );
-                })}
-              </div>
-            </motion.div>
+                      </motion.div>
+                    );
+                  })}
+                </div>
+              </motion.div>
+            )}
           </div>
         )}
 
