@@ -16,80 +16,12 @@ import {
   Upload,
   Trash,
 } from 'lucide-react';
-import { analyzeSpeaking, type AIFeedback, generatePersonalizedTips } from '../lib/ai-services';
-import { saveActivity, getSpeakingStats, getActivitiesByType, getUserStats } from '../lib/user-progress';
+import { analyzeSpeaking, type AIFeedback, generatePersonalizedTips, generateSpeakingTopics } from '../lib/ai-services';
+import { saveActivity, getSpeakingStats, getActivitiesByType, getUserStats, getActivities } from '../lib/user-progress';
 import { getCurrentUser } from '../lib/auth';
 import { toast } from 'sonner';
 
-// Speaking topics aligned with Writing prompts (aynı tarz konular, konuşmaya göre sürelerle)
-const speakingTopics = [
-  {
-    id: 1,
-    title: 'My Best Friend',
-    description: 'Talk about your best friend and why they are special',
-    difficulty: 'Beginner',
-    duration: '2 min',
-    color: 'from-blue-500 to-blue-600',
-    bgColor: 'bg-blue-50',
-    completed: true,
-    score: 85,
-  },
-  {
-    id: 2,
-    title: 'A Memorable Day',
-    description: 'Describe a day you will never forget',
-    difficulty: 'Beginner',
-    duration: '3 min',
-    color: 'from-green-500 to-green-600',
-    bgColor: 'bg-green-50',
-    completed: true,
-    score: 90,
-  },
-  {
-    id: 3,
-    title: 'My Dream Job',
-    description: 'Explain your ideal career and why you want it',
-    difficulty: 'Intermediate',
-    duration: '3 min',
-    color: 'from-purple-500 to-purple-600',
-    bgColor: 'bg-purple-50',
-    completed: false,
-    score: null,
-  },
-  {
-    id: 4,
-    title: 'Technology and Society',
-    description: 'Talk about how technology affects our daily lives',
-    difficulty: 'Intermediate',
-    duration: '4 min',
-    color: 'from-orange-500 to-orange-600',
-    bgColor: 'bg-orange-50',
-    completed: false,
-    score: null,
-  },
-  {
-    id: 5,
-    title: 'Argumentative Topic',
-    description: 'Give your opinion: should social media be regulated?',
-    difficulty: 'Advanced',
-    duration: '5 min',
-    color: 'from-pink-500 to-pink-600',
-    bgColor: 'bg-pink-50',
-    completed: false,
-    score: null,
-  },
-  {
-    id: 6,
-    title: 'Critical Issue',
-    description: 'Discuss a current global issue and possible solutions',
-    difficulty: 'Advanced',
-    duration: '5 min',
-    color: 'from-indigo-500 to-indigo-600',
-    bgColor: 'bg-indigo-50',
-    completed: false,
-    score: null,
-  },
-];
+// Speaking topics are now generated dynamically by AI - no hard-coded data
 
 // Helper function to format date
 const formatActivityDate = (dateString: string): string => {
@@ -139,6 +71,18 @@ export function SpeakingSection({ initialActivityId }: SpeakingSectionProps) {
   }>>([]);
   const [speakingTips, setSpeakingTips] = useState<string[]>([]);
   const [loadingTips, setLoadingTips] = useState(true);
+  const [speakingTopics, setSpeakingTopics] = useState<Array<{
+    id: number;
+    title: string;
+    description: string;
+    difficulty: 'Beginner' | 'Intermediate' | 'Advanced';
+    duration: string;
+    color: string;
+    bgColor: string;
+    completed: boolean;
+    score: number | null;
+  }>>([]);
+  const [loadingTopics, setLoadingTopics] = useState(true);
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const audioChunksRef = useRef<Blob[]>([]);
   const timerRef = useRef<NodeJS.Timeout | null>(null);
@@ -265,6 +209,27 @@ export function SpeakingSection({ initialActivityId }: SpeakingSectionProps) {
     }
   }, [preAnalysisText, feedback]);
 
+  // Load speaking topics from AI
+  useEffect(() => {
+    const loadTopics = async () => {
+      setLoadingTopics(true);
+      try {
+        const user = getCurrentUser();
+        const activities = getActivities();
+        const topics = await generateSpeakingTopics(user?.cefrLevel || null, activities, 6);
+        setSpeakingTopics(topics);
+      } catch (error) {
+        console.error('Error loading speaking topics:', error);
+        toast.error('Failed to load speaking topics. Please check your API keys.');
+        // Show empty state - no hard-coded fallback
+      } finally {
+        setLoadingTopics(false);
+      }
+    };
+
+    loadTopics();
+  }, []);
+
   useEffect(() => {
     const loadTips = async () => {
       setLoadingTips(true);
@@ -282,12 +247,8 @@ export function SpeakingSection({ initialActivityId }: SpeakingSectionProps) {
         setSpeakingTips(tips);
       } catch (error) {
         console.error('Error loading tips:', error);
-        setSpeakingTips([
-          'Speak clearly and at a moderate pace',
-          'Use complete sentences',
-          'Practice in a quiet environment',
-          "Don't worry about mistakes!"
-        ]);
+        // No hard-coded fallback - show empty state
+        setSpeakingTips([]);
       } finally {
         setLoadingTips(false);
       }

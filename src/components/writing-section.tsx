@@ -18,6 +18,7 @@ import {
   type AIFeedback,
   type SimpleWritingAnalysis,
   generatePersonalizedTips,
+  generateWritingPrompts,
 } from '../lib/ai-services';
 import { saveActivity, getWritingStats, getActivitiesByType, getUserStats, getActivities } from '../lib/user-progress';
 import { getCurrentUser } from '../lib/auth';
@@ -30,74 +31,7 @@ interface WritingSectionProps {
   assignmentId?: string | null;
 }
 
-const writingPrompts = [
-  {
-    id: 1,
-    title: 'My Best Friend',
-    description: 'Write about your best friend and why they are special',
-    difficulty: 'Beginner',
-    wordCount: '100-150',
-    color: 'from-blue-500 to-blue-600',
-    bgColor: 'bg-blue-50',
-    completed: true,
-    score: 85
-  },
-  {
-    id: 2,
-    title: 'A Memorable Day',
-    description: 'Describe a day you will never forget',
-    difficulty: 'Beginner',
-    wordCount: '150-200',
-    color: 'from-green-500 to-green-600',
-    bgColor: 'bg-green-50',
-    completed: true,
-    score: 90
-  },
-  {
-    id: 3,
-    title: 'My Dream Job',
-    description: 'Write about your ideal career and why',
-    difficulty: 'Intermediate',
-    wordCount: '200-250',
-    color: 'from-purple-500 to-purple-600',
-    bgColor: 'bg-purple-50',
-    completed: false,
-    score: null
-  },
-  {
-    id: 4,
-    title: 'Technology and Society',
-    description: 'Discuss how technology affects our daily lives',
-    difficulty: 'Intermediate',
-    wordCount: '250-300',
-    color: 'from-orange-500 to-orange-600',
-    bgColor: 'bg-orange-50',
-    completed: false,
-    score: null
-  },
-  {
-    id: 5,
-    title: 'Argumentative Essay',
-    description: 'Should social media be regulated? Present your argument',
-    difficulty: 'Advanced',
-    wordCount: '300-400',
-    color: 'from-pink-500 to-pink-600',
-    bgColor: 'bg-pink-50',
-    completed: false,
-    score: null
-  },
-  {
-    id: 6,
-    title: 'Critical Analysis',
-    description: 'Analyze a current global issue and propose solutions',
-    difficulty: 'Advanced',
-    wordCount: '400-500',
-    color: 'from-indigo-500 to-indigo-600',
-    bgColor: 'bg-indigo-50',
-    completed: false,
-    score: null
-  }
-];
+// Writing prompts are now generated dynamically by AI - no hard-coded data
 
 // Helper function to format date
 const formatActivityDate = (dateString: string): string => {
@@ -138,9 +72,19 @@ export function WritingSection({ initialActivityId, assignmentId }: WritingSecti
   }>>([]);
   const [writingTips, setWritingTips] = useState<string[]>([]);
   const [loadingTips, setLoadingTips] = useState(true);
-  const [visibleTopicIds, setVisibleTopicIds] = useState<number[]>(
-    () => writingPrompts.slice(0, 4).map((p) => p.id)
-  );
+  const [writingPrompts, setWritingPrompts] = useState<Array<{
+    id: number;
+    title: string;
+    description: string;
+    difficulty: 'Beginner' | 'Intermediate' | 'Advanced';
+    wordCount: string;
+    color: string;
+    bgColor: string;
+    completed: boolean;
+    score: number | null;
+  }>>([]);
+  const [loadingPrompts, setLoadingPrompts] = useState(true);
+  const [visibleTopicIds, setVisibleTopicIds] = useState<number[]>([]);
   const [isExtractingText, setIsExtractingText] = useState(false);
   const [uploadedFile, setUploadedFile] = useState<{
     name: string;
@@ -244,6 +188,28 @@ export function WritingSection({ initialActivityId, assignmentId }: WritingSecti
     }
   }, [assignmentId]);
 
+  // Load writing prompts from AI
+  useEffect(() => {
+    const loadPrompts = async () => {
+      setLoadingPrompts(true);
+      try {
+        const user = getCurrentUser();
+        const activities = getActivities();
+        const prompts = await generateWritingPrompts(user?.cefrLevel || null, activities, 6);
+        setWritingPrompts(prompts);
+        setVisibleTopicIds(prompts.slice(0, 4).map((p) => p.id));
+      } catch (error) {
+        console.error('Error loading writing prompts:', error);
+        toast.error('Failed to load writing prompts. Please check your API keys.');
+        // Show empty state - no hard-coded fallback
+      } finally {
+        setLoadingPrompts(false);
+      }
+    };
+
+    loadPrompts();
+  }, []);
+
   useEffect(() => {
     const loadTips = async () => {
       setLoadingTips(true);
@@ -261,12 +227,8 @@ export function WritingSection({ initialActivityId, assignmentId }: WritingSecti
         setWritingTips(tips);
       } catch (error) {
         console.error('Error loading tips:', error);
-        setWritingTips([
-          'Start with an outline',
-          'Use varied sentence structures',
-          'Check grammar and spelling',
-          'Support ideas with examples'
-        ]);
+        // No hard-coded fallback - show empty state
+        setWritingTips([]);
       } finally {
         setLoadingTips(false);
       }

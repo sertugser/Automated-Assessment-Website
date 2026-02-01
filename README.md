@@ -110,7 +110,17 @@ Your `.env` file should look like this:
 VITE_GROQ_API_KEY=gsk_your_actual_key_here
 VITE_HF_API_KEY=hf_your_actual_token_here
 VITE_GEMINI_API_KEY=your_actual_gemini_key_here
+
+# Admin credentials (optional - defaults provided if not set)
+VITE_ADMIN_EMAIL=admin@aafs.com
+VITE_ADMIN_PASSWORD=Admin@2026!
 ```
+
+**Admin Credentials:**
+- `VITE_ADMIN_EMAIL`: The email address that will have admin access (default: `admin@aafs.com`)
+- `VITE_ADMIN_PASSWORD`: The password for the admin account (default: `Admin@2026!`)
+- If these are not set, the system will use the default values above
+- Only the email specified in `VITE_ADMIN_EMAIL` can log in as an admin
 
 **Important:** Do not commit the `.env` file to version control. It is already included in `.gitignore`.
 

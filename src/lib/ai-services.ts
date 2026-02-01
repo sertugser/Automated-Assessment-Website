@@ -933,8 +933,8 @@ export const generateReadingComprehension = async (
   }>;
 }> => {
   if (!GROQ_API_KEY && !GEMINI_API_KEY) {
-    // Return default reading comprehension
-    return getDefaultReadingComprehension(difficulty, questionCount, cefrLevel, topic);
+    // No hard-coded fallback - throw error
+    throw new Error('No API keys configured. Please configure at least one API key to use reading comprehension features.');
   }
 
   const topicInfo = topic ? ` The topic/theme should be specifically about: "${topic}". ` : '';
@@ -983,10 +983,9 @@ Return ONLY JSON (no markdown):
     const aiPassage = data?.passage?.trim() || '';
     const aiQuestions = Array.isArray(data?.questions) ? data.questions : [];
     
-    // If passage is missing or questions are invalid, use fallback
+    // If passage is missing or questions are invalid, throw error
     if (!aiPassage || aiQuestions.length === 0) {
-      console.warn('AI did not return valid reading comprehension data, using fallback');
-      return getDefaultReadingComprehension(difficulty, questionCount, cefrLevel, topic);
+      throw new Error('AI did not return valid reading comprehension data. Please try again.');
     }
     
     let processedQuestions = aiQuestions.map((q: any, index: number) => ({
@@ -1002,19 +1001,15 @@ Return ONLY JSON (no markdown):
     processedQuestions = ensureBalancedAnswerDistribution(processedQuestions);
     
     // Ensure we have the requested number of questions
-    if (processedQuestions.length !== questionCount) {
-      if (processedQuestions.length < questionCount) {
-        const defaultRC = getDefaultReadingComprehension(difficulty, questionCount - processedQuestions.length, cefrLevel, topic);
-        processedQuestions = [...processedQuestions, ...defaultRC.questions];
-      } else {
-        processedQuestions = processedQuestions.slice(0, questionCount);
-      }
+    if (processedQuestions.length < questionCount) {
+      throw new Error(`AI generated only ${processedQuestions.length} questions, but ${questionCount} were requested. Please try again.`);
     }
     
     // Final check: ensure passage is not empty
-    const finalPassage = aiPassage && aiPassage.trim() !== '' && aiPassage !== 'No passage provided'
-      ? aiPassage
-      : getDefaultReadingComprehension(difficulty, questionCount, cefrLevel, topic).passage;
+    if (!aiPassage || aiPassage.trim() === '' || aiPassage === 'No passage provided') {
+      throw new Error('AI did not generate a valid reading passage. Please try again.');
+    }
+    const finalPassage = aiPassage;
     
     return {
       passage: finalPassage,
@@ -1025,8 +1020,8 @@ Return ONLY JSON (no markdown):
     };
   } catch (error) {
     console.error('Error generating reading comprehension:', error);
-    console.warn('API failed, using default reading comprehension');
-    return getDefaultReadingComprehension(difficulty, questionCount, cefrLevel, topic);
+    // No hard-coded fallback - throw error so component can handle it
+    throw new Error('Failed to generate reading comprehension. Please check your API keys and try again.');
   }
 };
 
@@ -1472,16 +1467,12 @@ Return ONLY JSON array (no markdown):
     }));
     
     // Ensure we have exactly the requested number of questions
-    if (processedQuestions.length !== count) {
-      console.warn(`AI returned ${processedQuestions.length} questions, but ${count} were requested. Using available questions.`);
-      // If we have fewer, we'll use default questions to fill
-      if (processedQuestions.length < count) {
-        const defaultQuestions = getDefaultQuizQuestions(topic, difficulty, count - processedQuestions.length, cefrLevel);
-        processedQuestions = [...processedQuestions, ...defaultQuestions];
-      } else {
-        // If we have more, take only the requested count
-        processedQuestions = processedQuestions.slice(0, count);
-      }
+    if (processedQuestions.length < count) {
+      throw new Error(`AI generated only ${processedQuestions.length} questions, but ${count} were requested. Please try again.`);
+    }
+    // If we have more, take only the requested count
+    if (processedQuestions.length > count) {
+      processedQuestions = processedQuestions.slice(0, count);
     }
     
     // Ensure balanced answer distribution by shuffling ALL questions
@@ -1494,10 +1485,8 @@ Return ONLY JSON array (no markdown):
     }));
   } catch (error) {
     console.error('Error generating quiz questions:', error);
-    console.warn('API failed, using default questions as fallback');
-    
-    // Fallback to default questions when API fails
-    return getDefaultQuizQuestions(topic, difficulty, count, cefrLevel);
+    // No hard-coded fallback - throw error so component can handle it
+    throw new Error('Failed to generate quiz questions. Please check your API keys and try again.');
   }
 };
 
@@ -2995,41 +2984,260 @@ Example format: ["resilient", "pragmatic", "eloquent", "meticulous", "ubiquitous
       }
     }
 
-    // If we got fewer words than requested, fill with fallback words
+    // If we got fewer words than requested, try to get more from AI
     if (words.length < count) {
-      const fallbackWords = [
-        'serendipity', 'ephemeral', 'eloquent', 'resilient', 'melancholy', 
-        'ubiquitous', 'paradigm', 'pragmatic', 'ambiguous', 'nostalgia',
-        'voracious', 'meticulous', 'juxtaposition', 'perseverance', 'epiphany'
-      ];
-      const level = cefrLevel || 'A1';
-      const levelWords: Record<string, string[]> = {
-        'A1': ['hello', 'friend', 'happy', 'beautiful', 'important', 'interesting'],
-        'A2': ['comfortable', 'difficult', 'wonderful', 'excellent', 'necessary', 'possible'],
-        'B1': ['achieve', 'develop', 'improve', 'manage', 'organize', 'realize'],
-        'B2': ['analyze', 'consider', 'establish', 'maintain', 'recognize', 'significant'],
-        'C1': ['comprehensive', 'distinguish', 'elaborate', 'fundamental', 'sophisticated', 'substantial'],
-        'C2': ['ambiguous', 'paradigm', 'ubiquitous', 'meticulous', 'perseverance', 'epiphany']
-      };
-      const appropriateWords = levelWords[level] || levelWords['B1'];
-      const needed = count - words.length;
-      words.push(...appropriateWords.slice(0, needed));
+      // Try with backup API if available
+      try {
+        const backupPrompt = `Generate ${count - words.length} more English vocabulary words for a ${cefrLevel || 'beginner'} level student. Return ONLY a JSON array: ["word1", "word2", ...]`;
+        const backupResponse = await callAIWithBackup(backupPrompt, {
+          temperature: 0.7,
+          maxTokens: 150,
+        });
+        const backupContent = backupResponse.trim();
+        const backupCleaned = backupContent.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim();
+        try {
+          const backupWords = JSON.parse(backupCleaned);
+          if (Array.isArray(backupWords)) {
+            words.push(...backupWords.filter((w: string) => typeof w === 'string' && w.length > 0));
+          }
+        } catch {
+          // Try to extract words from text
+          const wordMatches = backupContent.match(/"([^"]+)"/g);
+          if (wordMatches) {
+            words.push(...wordMatches.map(m => m.replace(/"/g, '')));
+          }
+        }
+      } catch (backupError) {
+        console.warn('[AI] Backup word generation failed:', backupError);
+      }
     }
 
+    // Return what we have (even if less than requested) - no hard-coded fallbacks
     return words.slice(0, count);
   } catch (error) {
     console.error('[AI] Error generating personalized words:', error);
-    // Fallback to level-appropriate words
-    const level = cefrLevel || 'A1';
-    const fallbackWords: Record<string, string[]> = {
-      'A1': ['hello', 'friend', 'happy', 'beautiful', 'important', 'interesting'],
-      'A2': ['comfortable', 'difficult', 'wonderful', 'excellent', 'necessary', 'possible'],
-      'B1': ['achieve', 'develop', 'improve', 'manage', 'organize', 'realize'],
-      'B2': ['analyze', 'consider', 'establish', 'maintain', 'recognize', 'significant'],
-      'C1': ['comprehensive', 'distinguish', 'elaborate', 'fundamental', 'sophisticated', 'substantial'],
-      'C2': ['ambiguous', 'paradigm', 'ubiquitous', 'meticulous', 'perseverance', 'epiphany']
-    };
-    return fallbackWords[level] || fallbackWords['B1'];
+    // No hard-coded fallback - throw error so component can handle it
+    throw new Error('Failed to generate personalized words. Please check your API keys and try again.');
+  }
+};
+
+/**
+ * Generate personalized writing prompts based on user level and activities
+ */
+export const generateWritingPrompts = async (
+  cefrLevel: string | null,
+  userActivities: any[],
+  count: number = 6
+): Promise<Array<{
+  id: number;
+  title: string;
+  description: string;
+  difficulty: 'Beginner' | 'Intermediate' | 'Advanced';
+  wordCount: string;
+  color: string;
+  bgColor: string;
+  completed: boolean;
+  score: number | null;
+}>> => {
+  try {
+    // Analyze user activities to determine appropriate difficulty
+    const recentScores = userActivities.filter(a => a.type === 'writing').slice(-5).map(a => a.score);
+    const averageScore = recentScores.length > 0 
+      ? recentScores.reduce((a, b) => a + b, 0) / recentScores.length 
+      : 0;
+    
+    // Determine difficulty based on CEFR level
+    let difficulty: 'Beginner' | 'Intermediate' | 'Advanced' = 'Beginner';
+    if (cefrLevel === 'B1' || cefrLevel === 'B2') {
+      difficulty = 'Intermediate';
+    } else if (cefrLevel === 'C1' || cefrLevel === 'C2') {
+      difficulty = 'Advanced';
+    } else if (averageScore > 80 && cefrLevel === 'A2') {
+      difficulty = 'Intermediate';
+    }
+
+    const prompt = `You are an expert English teacher. Generate ${count} personalized writing prompts for a student.
+
+Student Information:
+- CEFR Level: ${cefrLevel || 'Not assessed yet'}
+- Average Writing Score: ${averageScore.toFixed(0)}%
+- Difficulty Level: ${difficulty}
+
+Requirements:
+1. Create ${count} unique writing prompts appropriate for ${difficulty} level
+2. Each prompt should have:
+   - A clear, engaging title
+   - A detailed description that guides the student
+   - Appropriate word count range based on difficulty:
+     * Beginner: 100-200 words
+     * Intermediate: 200-300 words
+     * Advanced: 300-500 words
+3. Topics should be varied and interesting
+4. Prompts should help improve their writing skills
+
+Return ONLY a JSON array with this exact format (no markdown, no explanations):
+[
+  {
+    "title": "Prompt Title",
+    "description": "Detailed description of what to write about",
+    "difficulty": "${difficulty}",
+    "wordCount": "100-200"
+  },
+  ...
+]`;
+
+    const response = await callAIWithBackup(prompt, {
+      temperature: 0.8,
+      maxTokens: 2000,
+    });
+
+    // Parse JSON response
+    let prompts: any[] = [];
+    try {
+      const cleaned = response.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim();
+      prompts = JSON.parse(cleaned);
+      if (!Array.isArray(prompts)) {
+        throw new Error('Response is not an array');
+      }
+    } catch (parseError) {
+      console.error('[AI] Error parsing writing prompts:', parseError);
+      throw new Error('Failed to parse AI response');
+    }
+
+    // Map to required format with colors and metadata
+    const colors = [
+      { color: 'from-blue-500 to-blue-600', bgColor: 'bg-blue-50' },
+      { color: 'from-green-500 to-green-600', bgColor: 'bg-green-50' },
+      { color: 'from-purple-500 to-purple-600', bgColor: 'bg-purple-50' },
+      { color: 'from-orange-500 to-orange-600', bgColor: 'bg-orange-50' },
+      { color: 'from-pink-500 to-pink-600', bgColor: 'bg-pink-50' },
+      { color: 'from-indigo-500 to-indigo-600', bgColor: 'bg-indigo-50' },
+    ];
+
+    return prompts.slice(0, count).map((p, index) => ({
+      id: index + 1,
+      title: p.title || `Writing Prompt ${index + 1}`,
+      description: p.description || '',
+      difficulty: (p.difficulty || difficulty) as 'Beginner' | 'Intermediate' | 'Advanced',
+      wordCount: p.wordCount || (difficulty === 'Beginner' ? '100-200' : difficulty === 'Intermediate' ? '200-300' : '300-500'),
+      color: colors[index % colors.length].color,
+      bgColor: colors[index % colors.length].bgColor,
+      completed: false,
+      score: null,
+    }));
+  } catch (error) {
+    console.error('[AI] Error generating writing prompts:', error);
+    throw new Error('Failed to generate writing prompts. Please check your API keys and try again.');
+  }
+};
+
+/**
+ * Generate personalized speaking topics based on user level and activities
+ */
+export const generateSpeakingTopics = async (
+  cefrLevel: string | null,
+  userActivities: any[],
+  count: number = 6
+): Promise<Array<{
+  id: number;
+  title: string;
+  description: string;
+  difficulty: 'Beginner' | 'Intermediate' | 'Advanced';
+  duration: string;
+  color: string;
+  bgColor: string;
+  completed: boolean;
+  score: number | null;
+}>> => {
+  try {
+    // Analyze user activities to determine appropriate difficulty
+    const recentScores = userActivities.filter(a => a.type === 'speaking').slice(-5).map(a => a.score);
+    const averageScore = recentScores.length > 0 
+      ? recentScores.reduce((a, b) => a + b, 0) / recentScores.length 
+      : 0;
+    
+    // Determine difficulty based on CEFR level
+    let difficulty: 'Beginner' | 'Intermediate' | 'Advanced' = 'Beginner';
+    if (cefrLevel === 'B1' || cefrLevel === 'B2') {
+      difficulty = 'Intermediate';
+    } else if (cefrLevel === 'C1' || cefrLevel === 'C2') {
+      difficulty = 'Advanced';
+    } else if (averageScore > 80 && cefrLevel === 'A2') {
+      difficulty = 'Intermediate';
+    }
+
+    const prompt = `You are an expert English teacher. Generate ${count} personalized speaking topics for a student.
+
+Student Information:
+- CEFR Level: ${cefrLevel || 'Not assessed yet'}
+- Average Speaking Score: ${averageScore.toFixed(0)}%
+- Difficulty Level: ${difficulty}
+
+Requirements:
+1. Create ${count} unique speaking topics appropriate for ${difficulty} level
+2. Each topic should have:
+   - A clear, engaging title
+   - A detailed description that guides the student on what to talk about
+   - Appropriate duration based on difficulty:
+     * Beginner: 2-3 minutes
+     * Intermediate: 3-4 minutes
+     * Advanced: 4-5 minutes
+3. Topics should be varied and interesting
+4. Topics should help improve their speaking skills
+
+Return ONLY a JSON array with this exact format (no markdown, no explanations):
+[
+  {
+    "title": "Topic Title",
+    "description": "Detailed description of what to talk about",
+    "difficulty": "${difficulty}",
+    "duration": "2-3 min"
+  },
+  ...
+]`;
+
+    const response = await callAIWithBackup(prompt, {
+      temperature: 0.8,
+      maxTokens: 2000,
+    });
+
+    // Parse JSON response
+    let topics: any[] = [];
+    try {
+      const cleaned = response.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim();
+      topics = JSON.parse(cleaned);
+      if (!Array.isArray(topics)) {
+        throw new Error('Response is not an array');
+      }
+    } catch (parseError) {
+      console.error('[AI] Error parsing speaking topics:', parseError);
+      throw new Error('Failed to parse AI response');
+    }
+
+    // Map to required format with colors and metadata
+    const colors = [
+      { color: 'from-blue-500 to-blue-600', bgColor: 'bg-blue-50' },
+      { color: 'from-green-500 to-green-600', bgColor: 'bg-green-50' },
+      { color: 'from-purple-500 to-purple-600', bgColor: 'bg-purple-50' },
+      { color: 'from-orange-500 to-orange-600', bgColor: 'bg-orange-50' },
+      { color: 'from-pink-500 to-pink-600', bgColor: 'bg-pink-50' },
+      { color: 'from-indigo-500 to-indigo-600', bgColor: 'bg-indigo-50' },
+    ];
+
+    return topics.slice(0, count).map((t, index) => ({
+      id: index + 1,
+      title: t.title || `Speaking Topic ${index + 1}`,
+      description: t.description || '',
+      difficulty: (t.difficulty || difficulty) as 'Beginner' | 'Intermediate' | 'Advanced',
+      duration: t.duration || (difficulty === 'Beginner' ? '2-3 min' : difficulty === 'Intermediate' ? '3-4 min' : '4-5 min'),
+      color: colors[index % colors.length].color,
+      bgColor: colors[index % colors.length].bgColor,
+      completed: false,
+      score: null,
+    }));
+  } catch (error) {
+    console.error('[AI] Error generating speaking topics:', error);
+    throw new Error('Failed to generate speaking topics. Please check your API keys and try again.');
   }
 };
 

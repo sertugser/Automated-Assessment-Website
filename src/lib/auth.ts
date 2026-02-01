@@ -26,9 +26,10 @@ export interface AuthState {
 const USERS_KEY = 'aafs_users';
 const CURRENT_USER_KEY = 'aafs_current_user';
 
-// Admin email - only this email can be admin (hardcoded for security)
-export const ADMIN_EMAIL = 'admin@aafs.com';
-export const ADMIN_PASSWORD = 'Admin@2026!';
+// Admin credentials - loaded from environment variables
+// Default values for development if not set in .env
+export const ADMIN_EMAIL = import.meta.env.VITE_ADMIN_EMAIL || 'admin@aafs.com';
+export const ADMIN_PASSWORD = import.meta.env.VITE_ADMIN_PASSWORD || 'Admin@2026!';
 
 // Demo account passwords (ensure they always exist for login)
 const DEMO_PASSWORDS: Record<string, string> = {
