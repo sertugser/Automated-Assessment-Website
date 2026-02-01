@@ -12,9 +12,22 @@ if (import.meta.env.DEV) {
   const groq = !!GROQ_API_KEY;
   const gemini = !!GEMINI_API_KEY;
   if (!groq && !gemini) {
-    console.warn('[AssessAI] No API keys set. Using built-in placement questions. Add VITE_GROQ_API_KEY or VITE_GEMINI_API_KEY to .env and restart dev server.');
+    console.warn(
+      '[AssessAI] ⚠️ No API keys set. Using built-in placement questions.\n' +
+      'To enable AI features:\n' +
+      '1. Get API key from https://console.groq.com (Groq) or https://aistudio.google.com/app/apikey (Gemini)\n' +
+      '2. Create .env file in project root\n' +
+      '3. Add: VITE_GROQ_API_KEY=gsk_your_key_here OR VITE_GEMINI_API_KEY=your_key_here\n' +
+      '4. Restart dev server (npm run dev)'
+    );
   } else {
-    console.info(`[AssessAI] API: Groq ${groq ? 'OK' : '—'}, Gemini ${gemini ? 'OK' : '—'}`);
+    console.info(`[AssessAI] API: Groq ${groq ? '✓' : '—'}, Gemini ${gemini ? '✓' : '—'}`);
+    if (groq && !GROQ_API_KEY.startsWith('gsk_')) {
+      console.warn('[AssessAI] ⚠️ Groq API key format looks incorrect. Should start with "gsk_"');
+    }
+    if (gemini && GEMINI_API_KEY.length < 20) {
+      console.warn('[AssessAI] ⚠️ Gemini API key format looks incorrect. Should be longer.');
+    }
   }
 }
 
@@ -137,6 +150,21 @@ const callGroqAPI = async (prompt: string, systemPrompt: string, maxTokens?: num
       errorData = { error: { message: errorText } };
     }
     
+    // Check if it's an invalid API key error
+    if (errorData.error?.code === 'invalid_api_key' || 
+        errorData.error?.type === 'invalid_request_error' ||
+        errorText.includes('Invalid API Key') ||
+        errorText.includes('invalid_api_key')) {
+      const apiKeyError = new Error(
+        `Invalid Groq API Key. Please check your VITE_GROQ_API_KEY in .env file.\n` +
+        `1. Get your API key from https://console.groq.com\n` +
+        `2. Add it to .env file as: VITE_GROQ_API_KEY=gsk_your_key_here\n` +
+        `3. Restart the dev server (npm run dev)`
+      );
+      (apiKeyError as any).isInvalidApiKey = true;
+      throw apiKeyError;
+    }
+    
     // Check if it's a rate limit error
     if (errorData.error?.code === 'rate_limit_exceeded' || 
         errorData.error?.type === 'tokens' ||
@@ -223,6 +251,19 @@ const callAIWithBackup = async (prompt: string, systemPrompt: string, maxTokens?
     } catch (error: any) {
       const errorMsg = error instanceof Error ? error.message : String(error);
       errors.push(`Groq: ${errorMsg}`);
+      
+      // Check if it's an invalid API key error
+      if (error?.isInvalidApiKey || errorMsg.includes('Invalid API Key') || errorMsg.includes('invalid_api_key')) {
+        console.error('Groq API key is invalid. Please check your VITE_GROQ_API_KEY in .env file.');
+        // Don't try Gemini if Groq key is invalid - user needs to fix the key
+        throw new Error(
+          `Invalid Groq API Key. Please check your VITE_GROQ_API_KEY in .env file.\n` +
+          `1. Get your API key from https://console.groq.com\n` +
+          `2. Add it to .env file as: VITE_GROQ_API_KEY=gsk_your_key_here\n` +
+          `3. Restart the dev server (npm run dev)\n\n` +
+          `If you don't have a Groq API key, you can use Gemini instead by setting VITE_GEMINI_API_KEY in .env`
+        );
+      }
       
       // Check if it's a rate limit error
       if (error?.isRateLimit || errorMsg.includes('rate_limit') || errorMsg.includes('Rate limit')) {
@@ -1666,27 +1707,45 @@ export type IELTSQuestion = {
   section?: 1 | 2 | 3;
 };
 
-const IELTS_SIMULATION_PROMPT = `You are an expert IELTS Academic Reading test writer. Create a full IELTS Academic Reading simulation.
+export type IELTSPassage = {
+  section: 1 | 2 | 3;
+  text: string;
+  title?: string;
+};
+
+export type IELTSSimulationResult = {
+  questions: IELTSQuestion[];
+  passages: IELTSPassage[];
+};
+
+const IELTS_SIMULATION_PROMPT = `You are an expert IELTS Academic Reading test writer. Create a full IELTS Academic Reading simulation with 3 academic reading passages and 40 questions.
 
 RULES:
+- Create 3 academic reading passages (one for each section). Each passage should be 600-900 words, written in academic style on topics like: science, environment, history, psychology, technology, health, education (like real IELTS).
 - Exactly 40 questions total. Split across 3 sections (e.g. ~13–14 per section). Section 1 slightly easier, Section 3 hardest.
 - 60 minutes total (like the real test). Questions should reflect real IELTS past papers and official sample tests.
 - Use REAL IELTS question types in a realistic mix:
   1. Multiple choice (4 options A–D): "Choose the correct letter, A, B, C or D."
   2. True / False / Not Given (3 options): "Do the following statements agree with the information in the text?"
   3. Yes / No / Not Given (3 options): "Do the following statements agree with the views/claims of the writer?"
-- Base texts on academic-style topics: science, environment, history, psychology, technology, health, education (like real IELTS).
 - Each "question" must be self-contained: include the specific statement or stem. For MCQ, give the full question and 4 options. For T/F/NG or Y/N/NG, give the statement and options ["True", "False", "Not given"] or ["Yes", "No", "Not given"] as appropriate.
 - correctAnswer is the 0-based index of the correct option.
 - explanation: brief, educational explanation referring to IELTS skills (e.g. scanning, inference, writer's view).
 
 IMPORTANT: Distribute correct answers randomly across all options. For multiple choice questions (4 options), vary the correctAnswer values (0, 1, 2, 3) evenly. For True/False/Not Given and Yes/No/Not Given questions (3 options), vary the correctAnswer values (0, 1, 2) evenly. Do NOT put all or most correct answers in the first option.
 
-Return ONLY a valid JSON array (no markdown, no code blocks):
-[
-  { "question": "...", "options": ["A", "B", "C", "D"] or ["True","False","Not given"] or ["Yes","No","Not given"], "correctAnswer": 0, "explanation": "...", "topic": "e.g. IELTS Reading Section 1", "section": 1 },
-  ... 40 items ...
-]`;
+Return ONLY a valid JSON object (no markdown, no code blocks):
+{
+  "passages": [
+    { "section": 1, "title": "Passage Title for Section 1", "text": "Full academic reading passage text (600-900 words)..." },
+    { "section": 2, "title": "Passage Title for Section 2", "text": "Full academic reading passage text (600-900 words)..." },
+    { "section": 3, "title": "Passage Title for Section 3", "text": "Full academic reading passage text (600-900 words)..." }
+  ],
+  "questions": [
+    { "question": "...", "options": ["A", "B", "C", "D"] or ["True","False","Not given"] or ["Yes","No","Not given"], "correctAnswer": 0, "explanation": "...", "topic": "e.g. IELTS Reading Section 1", "section": 1 },
+    ... 40 items ...
+  ]
+}`;
 
 type IELTSQuestionInput = Omit<IELTSQuestion, 'id'>;
 
@@ -1743,26 +1802,72 @@ function getDefaultIELTSQuestions(): IELTSQuestion[] {
   return pool.slice(0, 40).map((q, i) => ({ ...q, id: i + 1 }));
 }
 
-export const generateIELTSSimulation = async (): Promise<IELTSQuestion[]> => {
+function getDefaultIELTSPassages(): IELTSPassage[] {
+  return [
+    {
+      section: 1,
+      title: "The Future of Renewable Energy",
+      text: "Renewable energy sources have become increasingly cost-effective over the past decade, transforming the global energy landscape. Solar and wind power technologies have seen dramatic cost reductions, making them competitive with traditional fossil fuels in many regions. Governments worldwide are investing heavily in renewable infrastructure, recognizing both the environmental benefits and economic opportunities. The transition to clean energy is not just an environmental imperative but also an economic one, as countries seek to reduce their dependence on imported fossil fuels and create new jobs in the green energy sector. However, challenges remain, including the need for improved energy storage solutions and grid modernization to accommodate intermittent renewable sources."
+    },
+    {
+      section: 2,
+      title: "Urban Development and Sustainability",
+      text: "Urbanization continues to accelerate globally, with more than half of the world's population now living in cities. This rapid growth presents both opportunities and challenges for sustainable development. Cities are centers of innovation and economic activity, but they also consume vast amounts of resources and generate significant pollution. Sustainable urban planning requires balancing economic growth with environmental protection and social equity. Key strategies include developing efficient public transportation systems, promoting green building practices, and creating green spaces that improve air quality and quality of life. The success of these initiatives depends on collaboration between governments, businesses, and communities."
+    },
+    {
+      section: 3,
+      title: "Cognitive Science and Learning",
+      text: "Recent advances in cognitive science have revolutionized our understanding of how people learn. Research has shown that effective learning involves active engagement, spaced repetition, and the application of knowledge in varied contexts. Traditional teaching methods that rely heavily on lectures and memorization are being supplemented with more interactive approaches that encourage critical thinking and problem-solving. The integration of technology in education has opened new possibilities for personalized learning, allowing students to progress at their own pace and receive immediate feedback. However, educators must carefully balance technological tools with human interaction, as social learning remains crucial for developing communication skills and emotional intelligence."
+    }
+  ];
+}
+
+export const generateIELTSSimulation = async (): Promise<IELTSSimulationResult> => {
+  const defaultQuestions = getDefaultIELTSQuestions();
+  const defaultPassages = getDefaultIELTSPassages();
+
   if (!GROQ_API_KEY && !GEMINI_API_KEY) {
-    return getDefaultIELTSQuestions();
+    return {
+      questions: defaultQuestions,
+      passages: defaultPassages
+    };
   }
 
   try {
-    // IELTS needs more tokens (40 questions)
+    // IELTS needs more tokens (40 questions + 3 passages)
     const response = await callAIWithBackup(
       IELTS_SIMULATION_PROMPT,
-      'IELTS exam writer. Return JSON array of 40 questions only.',
-      3000 // More tokens for 40 questions
+      'IELTS exam writer. Return JSON object with passages and questions.',
+      4000 // More tokens for passages and questions
     );
     const raw = parseAIResponse(response);
-    const arr = Array.isArray(raw) ? raw : [];
+    
+    // Handle both old format (array) and new format (object with passages and questions)
+    let passages: IELTSPassage[] = defaultPassages;
+    let questionsArray: any[] = [];
 
-    if (arr.length < 20) {
+    if (raw && typeof raw === 'object' && !Array.isArray(raw)) {
+      // New format: { passages: [...], questions: [...] }
+      if (Array.isArray(raw.passages)) {
+        passages = raw.passages.map((p: any) => ({
+          section: typeof p.section === 'number' && p.section >= 1 && p.section <= 3 ? (p.section as 1 | 2 | 3) : 1,
+          title: typeof p.title === 'string' ? p.title : `Section ${p.section || 1}`,
+          text: typeof p.text === 'string' && p.text.trim() ? p.text.trim() : defaultPassages[(p.section || 1) - 1].text
+        }));
+      }
+      if (Array.isArray(raw.questions)) {
+        questionsArray = raw.questions;
+      }
+    } else if (Array.isArray(raw)) {
+      // Old format: just questions array
+      questionsArray = raw;
+    }
+
+    if (questionsArray.length < 20) {
       throw new Error('IELTS simulation did not return enough questions');
     }
 
-    let processedQuestions = arr.slice(0, 40).map((q: any, i: number) => {
+    let processedQuestions = questionsArray.slice(0, 40).map((q: any, i: number) => {
       const opts = Array.isArray(q.options) && q.options.length >= 2
         ? q.options
         : ['True', 'False', 'Not given'];
@@ -1783,10 +1888,27 @@ export const generateIELTSSimulation = async (): Promise<IELTSQuestion[]> => {
     // Ensure balanced answer distribution by shuffling if needed
     processedQuestions = ensureBalancedAnswerDistribution(processedQuestions);
     
-    return processedQuestions;
+    // Ensure we have 3 passages (one for each section)
+    const finalPassages: IELTSPassage[] = [];
+    for (let i = 1; i <= 3; i++) {
+      const existing = passages.find(p => p.section === i);
+      if (existing) {
+        finalPassages.push(existing);
+      } else {
+        finalPassages.push(defaultPassages[i - 1]);
+      }
+    }
+    
+    return {
+      questions: processedQuestions,
+      passages: finalPassages
+    };
   } catch (e) {
-    console.warn('IELTS simulation: AI failed, using built-in questions.', e);
-    return getDefaultIELTSQuestions();
+    console.warn('IELTS simulation: AI failed, using built-in questions and passages.', e);
+    return {
+      questions: defaultQuestions,
+      passages: defaultPassages
+    };
   }
 };
 
@@ -2516,6 +2638,109 @@ function getDefaultLearningDifficultyAnalysis(
   }
   return null;
 }
+
+export interface CommonMistakeAnalysis {
+  category: string;
+  description: string;
+  count: number;
+  examples: string[];
+  suggestion: string;
+}
+
+/**
+ * AI analysis of common mistakes - dynamically categorizes and analyzes mistakes
+ */
+export const getCommonMistakesAnalysis = async (
+  mistakeCounts: Array<{ topic: string; mistakeCount: number }>,
+  wrongAnswerDetails: Array<{ question: string; userAnswer: string; correctAnswer: string; explanation: string; topic: string }>
+): Promise<CommonMistakeAnalysis[]> => {
+  if (!mistakeCounts || mistakeCounts.length === 0) {
+    return [];
+  }
+
+  if (!GROQ_API_KEY && !GEMINI_API_KEY) {
+    // Fallback: return simple categorized mistakes
+    return mistakeCounts.slice(0, 8).map(m => ({
+      category: m.topic,
+      description: `You made ${m.mistakeCount} mistake${m.mistakeCount === 1 ? '' : 's'} in this topic`,
+      count: m.mistakeCount,
+      examples: [],
+      suggestion: 'Review the explanations for questions you got wrong and practice more exercises on this topic.',
+    }));
+  }
+
+  // Prepare context for AI
+  const mistakesContext = mistakeCounts.length > 0
+    ? `MISTAKE COUNTS: ${mistakeCounts.slice(0, 15).map(m => `"${m.topic}" (${m.mistakeCount} mistakes)`).join(', ')}`
+    : '';
+
+  const wrongAnswersContext = wrongAnswerDetails && wrongAnswerDetails.length > 0
+    ? `\n\nDETAILED WRONG ANSWERS:\n${wrongAnswerDetails.slice(0, 20).map((w, i) => `[${i + 1}] Topic: "${w.topic}" | Q: ${w.question.slice(0, 150)} | User chose: "${w.userAnswer}" | Correct: "${w.correctAnswer}" | Explanation: ${w.explanation.slice(0, 200)}`).join('\n')}`
+    : '';
+
+  const prompt = `You are an expert English teacher. Analyze the student's mistakes and categorize them into meaningful groups.
+
+${mistakesContext}${wrongAnswersContext}
+
+TASK:
+Analyze the mistakes and group them into categories (e.g., "Prepositions", "Verb Tenses", "Articles", "Vocabulary", "Grammar Structure", etc.). For each category:
+1. "category": A clear category name (e.g., "Prepositions (at/in/on)", "Present Perfect vs Past Simple")
+2. "description": A brief description of what mistakes were made in this category
+3. "count": Total number of mistakes in this category
+4. "examples": Array of 2-3 specific examples showing the mistake pattern (e.g., ["Used 'at' instead of 'in' for months", "Confused 'on' with 'at' for specific dates"])
+5. "suggestion": One sentence of specific advice on how to improve in this category
+
+Return ONLY a JSON array of objects (no markdown, no code blocks, no explanations):
+[
+  {"category":"...","description":"...","count":N,"examples":["...","..."],"suggestion":"..."},
+  ...
+]
+
+Focus on the TOP 6-8 most important categories. Be specific about grammar/vocabulary points.`;
+
+  try {
+    const response = await callAIWithBackup(
+      prompt,
+      'Expert English teacher. Analyze mistakes and return only a JSON array of categorized mistakes.',
+      1000
+    );
+
+    const parsed = parseAIResponse(response);
+    
+    if (Array.isArray(parsed) && parsed.length > 0) {
+      return parsed
+        .filter((item: any) => item && item.category && item.description)
+        .map((item: any) => ({
+          category: String(item.category || '').trim(),
+          description: String(item.description || '').trim(),
+          count: typeof item.count === 'number' ? item.count : (typeof item.count === 'string' ? parseInt(item.count) || 0 : 0),
+          examples: Array.isArray(item.examples) ? item.examples.map((e: any) => String(e).trim()).filter(Boolean) : [],
+          suggestion: String(item.suggestion || 'Practice more exercises on this topic.').trim(),
+        }))
+        .slice(0, 8)
+        .sort((a, b) => b.count - a.count);
+    }
+
+    // Fallback if AI response is invalid
+    return mistakeCounts.slice(0, 8).map(m => ({
+      category: m.topic,
+      description: `You made ${m.mistakeCount} mistake${m.mistakeCount === 1 ? '' : 's'} in this topic`,
+      count: m.mistakeCount,
+      examples: [],
+      suggestion: 'Review the explanations for questions you got wrong and practice more exercises on this topic.',
+    }));
+  } catch (e) {
+    console.error('getCommonMistakesAnalysis error:', e);
+    // Fallback on error
+    return mistakeCounts.slice(0, 8).map(m => ({
+      category: m.topic,
+      description: `You made ${m.mistakeCount} mistake${m.mistakeCount === 1 ? '' : 's'} in this topic`,
+      count: m.mistakeCount,
+      examples: [],
+      suggestion: 'Review the explanations for questions you got wrong and practice more exercises on this topic.',
+    }));
+  }
+};
 
 /**
  * Get default recommendations (fallback)

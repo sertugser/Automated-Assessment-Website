@@ -4,6 +4,7 @@ import { Mail, Lock, User, Eye, EyeOff, ArrowRight, GraduationCap, Users, Shield
 import { login, register, type UserRole } from '../lib/auth';
 import { toast } from 'sonner';
 import logo from '../assets/fbaa49f59eaf54473f226d88f4a207918ca971f2.png';
+import { useLanguage } from '../contexts/LanguageContext';
 
 interface AuthPageProps {
   onAuthSuccess: (userId: string, role: UserRole) => void;
@@ -11,6 +12,7 @@ interface AuthPageProps {
 }
 
 export function AuthPage({ onAuthSuccess, onBack }: AuthPageProps) {
+  const { t } = useLanguage();
   const [isLogin, setIsLogin] = useState(true);
   const [showPassword, setShowPassword] = useState(false);
   const [selectedRole, setSelectedRole] = useState<UserRole>('student');
@@ -89,7 +91,7 @@ export function AuthPage({ onAuthSuccess, onBack }: AuthPageProps) {
           className="fixed top-6 left-6 z-50 flex items-center gap-2 px-4 py-2 text-gray-700 hover:text-indigo-600 bg-white/80 backdrop-blur-sm rounded-xl shadow-md hover:shadow-lg transition-all group"
         >
           <ArrowLeft className="w-5 h-5 group-hover:-translate-x-1 transition-transform" />
-          <span className="font-medium">Back to Home</span>
+          <span className="font-medium">{t('common.backToHome')}</span>
         </button>
       )}
 

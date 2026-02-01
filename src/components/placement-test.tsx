@@ -15,6 +15,7 @@ import logo from '../assets/fbaa49f59eaf54473f226d88f4a207918ca971f2.png';
 import { generatePlacementQuestions, getDefaultPlacementQuestions, scoreToCEFR, calculateWeightedScore, type CEFRLevel } from '../lib/ai-services';
 import { updateUser, getCurrentUser, type User } from '../lib/auth';
 import { toast } from 'sonner';
+import { useLanguage } from '../contexts/LanguageContext';
 
 const CEFR_LABELS: Record<CEFRLevel, string> = {
   A1: 'A1 – Beginner',
@@ -480,7 +481,7 @@ export function PlacementTest({ user, onComplete, onBack, isRetake }: PlacementT
               onClick={handleContinue}
               className="inline-flex items-center gap-2 px-8 py-4 bg-gradient-to-r from-indigo-600 to-purple-600 text-white rounded-xl font-semibold hover:shadow-lg hover:shadow-indigo-200 transition-all text-lg"
             >
-              {isRetake ? 'Dashboard\'a Dön' : 'Devam Et'}
+              {isRetake ? t('common.backToDashboard') : t('common.continue')}
               <ArrowRight className="w-5 h-5" />
             </button>
           </motion.div>

@@ -260,25 +260,25 @@ export function ResultsScreen({ results, onRetry, onNewCourse, onBack }: Results
               className="group flex items-center justify-center gap-2 bg-gradient-to-r from-indigo-600 to-purple-600 text-white px-5 py-3 rounded-xl font-semibold text-sm hover:shadow-lg transition-all"
             >
               <RotateCcw className="w-4 h-4 group-hover:rotate-180 transition-transform duration-500" />
-              Retry Assessment
+              {t('common.retryAssessment')}
             </button>
             <button
               onClick={onNewCourse}
               className="flex items-center justify-center gap-2 bg-white border-2 border-gray-300 text-gray-900 px-5 py-3 rounded-xl font-semibold text-sm hover:border-indigo-600 hover:text-indigo-600 transition-all"
             >
               <BookOpen className="w-4 h-4" />
-              Try Another Course
+              {t('common.tryAnotherCourse')}
             </button>
           </div>
           
           <div className="grid md:grid-cols-2 gap-3">
             <button className="flex items-center justify-center gap-2 bg-gray-100 text-gray-700 px-4 py-2.5 rounded-xl font-medium text-sm hover:bg-gray-200 transition-all">
               <Share2 className="w-4 h-4" />
-              Share Results
+              {t('common.shareResults')}
             </button>
             <button className="flex items-center justify-center gap-2 bg-gray-100 text-gray-700 px-4 py-2.5 rounded-xl font-medium text-sm hover:bg-gray-200 transition-all">
               <Download className="w-4 h-4" />
-              Download Certificate
+              {t('common.downloadCertificate')}
             </button>
           </div>
         </div>

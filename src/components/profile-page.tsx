@@ -5,7 +5,7 @@ import {
   BookOpen, Edit2, Edit, Save, X, Settings,
   Globe, Shield, LogOut, Camera, Lock, Eye, EyeOff, Trash2
 } from 'lucide-react';
-import { type User as UserType, updateUser, changePassword } from '../lib/auth';
+import { type User as UserType, updateUser, changePassword, getCurrentUser } from '../lib/auth';
 import { toast } from 'sonner';
 import { getUserStats, getAchievements, type Achievement } from '../lib/user-progress';
 import { useLanguage } from '../contexts/LanguageContext';
@@ -84,13 +84,66 @@ export function ProfilePage({ user, onLogout, onUpdateUser }: ProfilePageProps) 
     }
   };
 
+  // Compress and resize image to reduce file size
+  const compressImage = (file: File, maxWidth: number = 400, maxHeight: number = 400, quality: number = 0.8): Promise<string> => {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = (e) => {
+        const img = new Image();
+        img.onload = () => {
+          const canvas = document.createElement('canvas');
+          let width = img.width;
+          let height = img.height;
+
+          // Calculate new dimensions
+          if (width > height) {
+            if (width > maxWidth) {
+              height = (height * maxWidth) / width;
+              width = maxWidth;
+            }
+          } else {
+            if (height > maxHeight) {
+              width = (width * maxHeight) / height;
+              height = maxHeight;
+            }
+          }
+
+          canvas.width = width;
+          canvas.height = height;
+
+          const ctx = canvas.getContext('2d');
+          if (!ctx) {
+            reject(new Error('Could not get canvas context'));
+            return;
+          }
+
+          ctx.drawImage(img, 0, 0, width, height);
+          
+          // Convert to base64 with compression
+          const base64String = canvas.toDataURL('image/jpeg', quality);
+          resolve(base64String);
+        };
+        img.onerror = () => reject(new Error('Failed to load image'));
+        img.src = e.target?.result as string;
+      };
+      reader.onerror = () => reject(new Error('Failed to read file'));
+      reader.readAsDataURL(file);
+    });
+  };
+
   const handleAvatarClick = () => {
     // If avatar exists, delete it
     if (avatarPreview) {
       if (confirm('Are you sure you want to delete your profile photo?')) {
         setAvatarPreview(null);
         updateUser(user.id, { avatar: undefined });
-        onUpdateUser({ ...user, avatar: undefined });
+        // Get updated user from localStorage to ensure sync
+        const updatedUser = getCurrentUser();
+        if (updatedUser) {
+          onUpdateUser(updatedUser);
+        } else {
+          onUpdateUser({ ...user, avatar: undefined });
+        }
         toast.success('Profile photo deleted successfully');
       }
       return;
@@ -100,33 +153,59 @@ export function ProfilePage({ user, onLogout, onUpdateUser }: ProfilePageProps) 
     const input = document.createElement('input');
     input.type = 'file';
     input.accept = 'image/*';
-    input.onchange = (e) => {
+    input.onchange = async (e) => {
       const file = (e.target as HTMLInputElement).files?.[0];
       if (!file) return;
 
       // Validate file type
       if (!file.type.startsWith('image/')) {
-        alert('Please select an image file');
+        toast.error('Please select an image file');
         return;
       }
 
-      // Validate file size (max 5MB)
-      if (file.size > 5 * 1024 * 1024) {
-        alert('Image size should be less than 5MB');
+      // Validate file size (max 10MB before compression)
+      if (file.size > 10 * 1024 * 1024) {
+        toast.error('Image size should be less than 10MB');
         return;
       }
 
-      // Read file as base64
-      const reader = new FileReader();
-      reader.onloadend = () => {
-        const base64String = reader.result as string;
-        setAvatarPreview(base64String);
+      try {
+        // Compress and resize image
+        const compressedBase64 = await compressImage(file, 400, 400, 0.75);
         
-        // Update user avatar
-        updateUser(user.id, { avatar: base64String });
-        onUpdateUser({ ...user, avatar: base64String });
-      };
-      reader.readAsDataURL(file);
+        // Check if compressed image is still too large (shouldn't be, but just in case)
+        if (compressedBase64.length > 500 * 1024) { // 500KB limit
+          toast.error('Image is still too large after compression. Please use a smaller image.');
+          return;
+        }
+        
+        // Update user avatar in localStorage
+        const success = updateUser(user.id, { avatar: compressedBase64 });
+        
+        if (!success) {
+          console.error('updateUser failed for user ID:', user.id);
+          toast.error('Failed to save profile photo. Please try again.');
+          return;
+        }
+        
+        // Get updated user from localStorage to ensure sync with parent component
+        const updatedUser = getCurrentUser();
+        if (updatedUser && updatedUser.avatar) {
+          setAvatarPreview(updatedUser.avatar);
+          onUpdateUser(updatedUser);
+          toast.success('Profile photo saved successfully');
+        } else {
+          // Fallback if getCurrentUser fails or avatar is missing
+          console.warn('getCurrentUser returned null or missing avatar, using fallback');
+          setAvatarPreview(compressedBase64);
+          const fallbackUser = { ...user, avatar: compressedBase64 };
+          onUpdateUser(fallbackUser);
+          toast.success('Profile photo saved successfully');
+        }
+      } catch (error) {
+        console.error('Error processing avatar:', error);
+        toast.error('Error saving profile photo: ' + (error instanceof Error ? error.message : 'Unknown error'));
+      }
     };
     input.click();
   };

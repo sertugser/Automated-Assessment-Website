@@ -86,6 +86,7 @@ export function QuizInterface({ courseId, onComplete, onBack, questionCount: pro
   const [ieltsStarted, setIeltsStarted] = useState(false);
   const [questions, setQuestions] = useState<Question[]>([]);
   const [readingPassage, setReadingPassage] = useState<string>('');
+  const [ieltsPassages, setIeltsPassages] = useState<Array<{ section: 1 | 2 | 3; title?: string; text: string }>>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [currentQuestion, setCurrentQuestion] = useState(0);
   const [selectedAnswer, setSelectedAnswer] = useState<number | null>(null);
@@ -107,6 +108,7 @@ export function QuizInterface({ courseId, onComplete, onBack, questionCount: pro
       loadedCourseIdRef.current = null;
       setQuestions([]);
       setReadingPassage('');
+      setIeltsPassages([]);
     }
   }, [courseId]);
 
@@ -126,8 +128,10 @@ export function QuizInterface({ courseId, onComplete, onBack, questionCount: pro
         const currentIsReadingComprehension = courseId === 'reading-comprehension' || courseId.startsWith('reading-comprehension-');
         
         if (currentIsIELTS) {
-          generated = await generateIELTSSimulation();
-          setQuestions(generated);
+          const ieltsData = await generateIELTSSimulation();
+          setQuestions(ieltsData.questions);
+          setIeltsPassages(ieltsData.passages);
+          generated = ieltsData.questions;
         } else if (currentIsReadingComprehension) {
           const readingData = await generateReadingComprehension(
             currentQuizInfo.difficulty,
@@ -316,7 +320,9 @@ export function QuizInterface({ courseId, onComplete, onBack, questionCount: pro
         courseTitle: quizInfo.title,
         questions: questions,
         userAnswers: finalSelections,
-        readingPassage: readingPassage || undefined,
+        readingPassage: isIELTS && ieltsPassages.length > 0 
+          ? ieltsPassages.map(p => `Section ${p.section}${p.title ? `: ${p.title}` : ''}\n\n${p.text}`).join('\n\n---\n\n')
+          : readingPassage || undefined,
       });
     }
   };
@@ -397,6 +403,30 @@ export function QuizInterface({ courseId, onComplete, onBack, questionCount: pro
           </div>
           <div className="bg-white rounded-lg p-6 max-h-96 overflow-y-auto">
             <p className="text-gray-800 leading-relaxed whitespace-pre-wrap">{readingPassage}</p>
+          </div>
+        </motion.div>
+      )}
+
+      {/* IELTS Academic Reading Passages - Show for IELTS */}
+      {isIELTS && ieltsPassages.length > 0 && currentQ.section && (
+        <motion.div
+          initial={{ opacity: 0, y: -20 }}
+          animate={{ opacity: 1, y: 0 }}
+          className="bg-gradient-to-br from-indigo-50 to-purple-50 rounded-2xl shadow-lg p-6 mb-6 border-2 border-indigo-200"
+        >
+          <div className="flex items-center gap-2 mb-4">
+            <BookOpen className="w-5 h-5 text-indigo-600" />
+            <h3 className="text-lg font-bold text-indigo-900">
+              Reading Passage {currentQ.section}
+              {ieltsPassages.find(p => p.section === currentQ.section)?.title && 
+                `: ${ieltsPassages.find(p => p.section === currentQ.section)?.title}`
+              }
+            </h3>
+          </div>
+          <div className="bg-white rounded-lg p-6 max-h-96 overflow-y-auto">
+            <p className="text-gray-800 leading-relaxed whitespace-pre-wrap">
+              {ieltsPassages.find(p => p.section === currentQ.section)?.text || ''}
+            </p>
           </div>
         </motion.div>
       )}

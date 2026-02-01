@@ -19,7 +19,7 @@ import { DictionarySection } from './dictionary-section';
 import { HomeworkSection } from './homework-section';
 import { type User as UserType, updateUser, getCurrentUser } from '../lib/auth';
 import { getUserStats, getRecentActivities, saveActivity, analyzeUserWeaknesses, getMistakeCountsByTopic, getWrongAnswerDetails, getActivitiesByType, getActivities, type UserActivity } from '../lib/user-progress';
-import { generatePersonalizedRecommendations, getLearningDifficultyAnalysis, type LearningDifficultyAnalysis } from '../lib/ai-services';
+import { generatePersonalizedRecommendations, getLearningDifficultyAnalysis, getCommonMistakesAnalysis, type LearningDifficultyAnalysis, type CommonMistakeAnalysis } from '../lib/ai-services';
 import { useLanguage } from '../contexts/LanguageContext';
 import logo from '../assets/fbaa49f59eaf54473f226d88f4a207918ca971f2.png';
 
@@ -85,6 +85,8 @@ export function AssessmentPlatform({ onBack, user }: AssessmentPlatformProps) {
   const [loadingRecommendations, setLoadingRecommendations] = useState(true);
   const [learningDifficulty, setLearningDifficulty] = useState<LearningDifficultyAnalysis | null>(null);
   const [loadingDifficulty, setLoadingDifficulty] = useState(true);
+  const [commonMistakes, setCommonMistakes] = useState<CommonMistakeAnalysis[]>([]);
+  const [loadingCommonMistakes, setLoadingCommonMistakes] = useState(true);
   const [initialSpeakingActivityId, setInitialSpeakingActivityId] = useState<string | null>(null);
   const [initialWritingActivityId, setInitialWritingActivityId] = useState<string | null>(null);
   const [initialWritingAssignmentId, setInitialWritingAssignmentId] = useState<string | null>(null);
@@ -179,6 +181,63 @@ export function AssessmentPlatform({ onBack, user }: AssessmentPlatformProps) {
     };
   }, [currentScreen]);
 
+  // Load saved analysis data from localStorage on mount
+  useEffect(() => {
+    if (currentUser?.id) {
+      try {
+        const savedDifficulty = localStorage.getItem(`assessai_learning_difficulty_${currentUser.id}`);
+        const savedCommonMistakes = localStorage.getItem(`assessai_common_mistakes_${currentUser.id}`);
+        
+        if (savedDifficulty) {
+          const parsed = JSON.parse(savedDifficulty);
+          // Check if data is not too old (24 hours)
+          if (parsed.timestamp && Date.now() - parsed.timestamp < 24 * 60 * 60 * 1000) {
+            setLearningDifficulty(parsed.data);
+            setLoadingDifficulty(false);
+          }
+        }
+        
+        if (savedCommonMistakes) {
+          const parsed = JSON.parse(savedCommonMistakes);
+          // Check if data is not too old (24 hours)
+          if (parsed.timestamp && Date.now() - parsed.timestamp < 24 * 60 * 60 * 1000) {
+            setCommonMistakes(parsed.data);
+            setLoadingCommonMistakes(false);
+          }
+        }
+      } catch (error) {
+        console.error('Error loading saved analysis:', error);
+      }
+    }
+  }, [currentUser?.id]);
+
+  // Save analysis data to localStorage when it changes
+  useEffect(() => {
+    if (currentUser?.id && learningDifficulty !== null) {
+      try {
+        localStorage.setItem(`assessai_learning_difficulty_${currentUser.id}`, JSON.stringify({
+          data: learningDifficulty,
+          timestamp: Date.now()
+        }));
+      } catch (error) {
+        console.error('Error saving learning difficulty:', error);
+      }
+    }
+  }, [learningDifficulty, currentUser?.id]);
+
+  useEffect(() => {
+    if (currentUser?.id && commonMistakes.length > 0) {
+      try {
+        localStorage.setItem(`assessai_common_mistakes_${currentUser.id}`, JSON.stringify({
+          data: commonMistakes,
+          timestamp: Date.now()
+        }));
+      } catch (error) {
+        console.error('Error saving common mistakes:', error);
+      }
+    }
+  }, [commonMistakes, currentUser?.id]);
+
   // Load AI-generated recommendations and learning difficulty analysis
   useEffect(() => {
     const loadRecommendations = async () => {
@@ -231,13 +290,35 @@ export function AssessmentPlatform({ onBack, user }: AssessmentPlatformProps) {
     };
 
     const loadDifficultyAnalysis = async () => {
+      // Only load if we don't have cached data or it's too old
+      const hasCachedDifficulty = currentUser?.id && localStorage.getItem(`assessai_learning_difficulty_${currentUser.id}`);
+      const hasCachedMistakes = currentUser?.id && localStorage.getItem(`assessai_common_mistakes_${currentUser.id}`);
+      
+      if (hasCachedDifficulty && hasCachedMistakes) {
+        try {
+          const savedDifficulty = JSON.parse(hasCachedDifficulty);
+          const savedMistakes = JSON.parse(hasCachedMistakes);
+          // If data is less than 24 hours old, skip reloading
+          if (savedDifficulty.timestamp && savedMistakes.timestamp && 
+              Date.now() - savedDifficulty.timestamp < 24 * 60 * 60 * 1000 &&
+              Date.now() - savedMistakes.timestamp < 24 * 60 * 60 * 1000) {
+            return; // Use cached data
+          }
+        } catch (e) {
+          // Continue to load fresh data
+        }
+      }
+
       setLoadingDifficulty(true);
+      setLoadingCommonMistakes(true);
       try {
         const stats = getUserStats();
         const recentActivities = getRecentActivities(10);
         const weaknessAnalysis = analyzeUserWeaknesses();
         const mistakeCounts = getMistakeCountsByTopic();
         const wrongAnswerDetails = getWrongAnswerDetails(20);
+        
+        // Load learning difficulty analysis
         const analysis = await getLearningDifficultyAnalysis(
           {
             streak: stats.streak,
@@ -256,11 +337,17 @@ export function AssessmentPlatform({ onBack, user }: AssessmentPlatformProps) {
           wrongAnswerDetails
         );
         setLearningDifficulty(analysis);
+        
+        // Load common mistakes analysis
+        const commonMistakesAnalysis = await getCommonMistakesAnalysis(mistakeCounts, wrongAnswerDetails);
+        setCommonMistakes(commonMistakesAnalysis);
       } catch (error) {
         console.error('Error loading learning difficulty analysis:', error);
         setLearningDifficulty(null);
+        setCommonMistakes([]);
       } finally {
         setLoadingDifficulty(false);
+        setLoadingCommonMistakes(false);
       }
     };
 
@@ -693,6 +780,8 @@ export function AssessmentPlatform({ onBack, user }: AssessmentPlatformProps) {
              onRetakeTest={() => navigateToScreen('placement')}
              learningDifficulty={learningDifficulty}
              loadingDifficulty={loadingDifficulty}
+             commonMistakes={commonMistakes}
+             loadingCommonMistakes={loadingCommonMistakes}
           />
         )}
         {currentScreen === 'progress' && (

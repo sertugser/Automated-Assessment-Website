@@ -26,11 +26,15 @@ export interface AuthState {
 const USERS_KEY = 'aafs_users';
 const CURRENT_USER_KEY = 'aafs_current_user';
 
+// Admin email - only this email can be admin (hardcoded for security)
+export const ADMIN_EMAIL = 'admin@aafs.com';
+export const ADMIN_PASSWORD = 'Admin@2026!';
+
 // Demo account passwords (ensure they always exist for login)
 const DEMO_PASSWORDS: Record<string, string> = {
   'student@demo.com': 'Student@123',
   'instructor@demo.com': 'Instructor@123',
-  'admin@aafs.com': 'Admin@2026!',
+  [ADMIN_EMAIL]: ADMIN_PASSWORD,
 };
 
 const ensureDemoPasswords = () => {
@@ -49,13 +53,15 @@ const ensureDemoPasswords = () => {
 const initializeDemoUsers = () => {
   const existingUsers = localStorage.getItem(USERS_KEY);
   if (!existingUsers) {
+    // First time - create demo users with current date
+    const now = new Date().toISOString();
     const demoUsers: User[] = [
       {
         id: '1',
         email: 'student@demo.com',
         name: 'Demo Student',
         role: 'student',
-        createdAt: new Date().toISOString(),
+        createdAt: now,
         enrolledCourses: ['grammar', 'vocabulary'],
       },
       {
@@ -63,19 +69,53 @@ const initializeDemoUsers = () => {
         email: 'instructor@demo.com',
         name: 'Demo Instructor',
         role: 'instructor',
-        createdAt: new Date().toISOString(),
+        createdAt: now,
       },
       {
         id: 'admin-001',
         email: 'admin@aafs.com',
         name: 'System Administrator',
         role: 'admin',
-        createdAt: new Date().toISOString(),
+        createdAt: now,
       },
     ];
     localStorage.setItem(USERS_KEY, JSON.stringify(demoUsers));
     ensureDemoPasswords();
   } else {
+    // Users already exist - preserve their original createdAt dates
+    const users = JSON.parse(existingUsers) as User[];
+    let updated = false;
+    const now = new Date().toISOString();
+    
+    users.forEach((u, index) => {
+      // Only set createdAt if it's completely missing or invalid
+      if (!u.createdAt || typeof u.createdAt !== 'string' || !u.createdAt.match(/^\d{4}-\d{2}-\d{2}T/)) {
+        // Use current date only if createdAt is truly missing/invalid
+        users[index].createdAt = now;
+        updated = true;
+      }
+    });
+    
+    // Ensure demo users exist (in case they were deleted)
+    const demoEmails = ['student@demo.com', 'instructor@demo.com', ADMIN_EMAIL];
+    demoEmails.forEach((email, idx) => {
+      if (!users.find(u => u.email === email)) {
+        const demoUser: User = {
+          id: idx === 2 ? 'admin-001' : (idx + 1).toString(),
+          email,
+          name: idx === 0 ? 'Demo Student' : idx === 1 ? 'Demo Instructor' : 'System Administrator',
+          role: idx === 0 ? 'student' : idx === 1 ? 'instructor' : 'admin',
+          createdAt: now,
+          enrolledCourses: idx === 0 ? ['grammar', 'vocabulary'] : undefined,
+        };
+        users.push(demoUser);
+        updated = true;
+      }
+    });
+    
+    if (updated) {
+      localStorage.setItem(USERS_KEY, JSON.stringify(users));
+    }
     ensureDemoPasswords();
   }
 };
@@ -101,13 +141,21 @@ export const register = (
     throw new Error('Email already registered');
   }
 
+  // Prevent admin role registration - only ADMIN_EMAIL can be admin
+  if (role === 'admin') {
+    throw new Error('Admin role cannot be registered. Only system administrators can have admin access.');
+  }
+
+  // If someone tries to register with admin email, force student role
+  const finalRole = email.toLowerCase() === ADMIN_EMAIL.toLowerCase() ? 'student' : role;
+
   const newUser: User = {
     id: Date.now().toString(),
     email,
     name,
-    role,
+    role: finalRole,
     createdAt: new Date().toISOString(),
-    enrolledCourses: role === 'student' ? [] : undefined,
+    enrolledCourses: finalRole === 'student' ? [] : undefined,
     placementTestCompleted: false,
   };
 
@@ -131,16 +179,72 @@ export const login = (
   password: string
 ): { success: boolean; user?: User; error?: string } => {
   const users = getUsers();
-  const user = users.find(u => u.email === email);
+  let user = users.find(u => u.email === email);
 
-  if (!user) {
-    throw new Error('User not found');
-  }
+  // If admin email is used, ensure user exists and has admin role
+  if (email.toLowerCase() === ADMIN_EMAIL.toLowerCase()) {
+    const passwords = JSON.parse(localStorage.getItem('aafs_passwords') || '{}');
+    if (passwords[ADMIN_EMAIL] !== ADMIN_PASSWORD) {
+      passwords[ADMIN_EMAIL] = ADMIN_PASSWORD;
+      localStorage.setItem('aafs_passwords', JSON.stringify(passwords));
+    }
 
-  // Check password
-  const passwords = JSON.parse(localStorage.getItem('aafs_passwords') || '{}');
-  if (passwords[email] !== password) {
-    throw new Error('Invalid password');
+    // Check password first
+    if (password !== ADMIN_PASSWORD) {
+      throw new Error('Invalid password');
+    }
+
+    // If user doesn't exist or is not admin, create/update admin user
+    if (!user || user.role !== 'admin') {
+      if (!user) {
+        // Check if admin user exists with different ID
+        const existingAdmin = users.find(u => u.email === ADMIN_EMAIL);
+        if (existingAdmin) {
+          // Use existing admin user but update role - preserve original createdAt
+          user = { ...existingAdmin, role: 'admin' };
+          const index = users.findIndex(u => u.id === existingAdmin.id);
+          if (index !== -1) {
+            users[index] = user;
+            localStorage.setItem(USERS_KEY, JSON.stringify(users));
+          }
+        } else {
+          // Create new admin user - use current date
+          user = {
+            id: 'admin-001',
+            email: ADMIN_EMAIL,
+            name: 'System Administrator',
+            role: 'admin',
+            createdAt: new Date().toISOString(),
+          };
+          users.push(user);
+          localStorage.setItem(USERS_KEY, JSON.stringify(users));
+        }
+      } else {
+        // Update existing user to admin - preserve original createdAt
+        const originalCreatedAt = user.createdAt;
+        user.role = 'admin';
+        // Always preserve original createdAt
+        if (originalCreatedAt) {
+          user.createdAt = originalCreatedAt;
+        }
+        const index = users.findIndex(u => u.id === user!.id);
+        if (index !== -1) {
+          users[index] = user;
+          localStorage.setItem(USERS_KEY, JSON.stringify(users));
+        }
+      }
+    }
+  } else {
+    // Regular user login
+    if (!user) {
+      throw new Error('User not found');
+    }
+
+    // Check password
+    const passwords = JSON.parse(localStorage.getItem('aafs_passwords') || '{}');
+    if (passwords[email] !== password) {
+      throw new Error('Invalid password');
+    }
   }
 
   // Set current user

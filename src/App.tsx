@@ -4,6 +4,7 @@ import { AuthPage } from './components/auth-page';
 import { LandingPage } from './components/landing-page';
 import { AssessmentPlatform } from './components/assessment-platform';
 import { InstructorPlatform } from './components/instructor-platform';
+import { AdminPlatform } from './components/admin-platform';
 import { PlacementTest } from './components/placement-test';
 import { getCurrentUser, logout, updateUser, type User, type UserRole, type CEFRLevel } from './lib/auth';
 
@@ -12,6 +13,17 @@ export default function App() {
   const [currentUser, setCurrentUser] = useState<User | null>(null);
 
   useEffect(() => {
+    // Check if this is the first load (npm run dev) or a refresh (F5)
+    const isFirstLoad = !sessionStorage.getItem('assessai_session_started');
+    
+    if (isFirstLoad) {
+      // First load - always start with landing page
+      sessionStorage.setItem('assessai_session_started', 'true');
+      setCurrentPage('landing');
+      return;
+    }
+
+    // This is a refresh (F5) - restore the last page
     const user = getCurrentUser();
     if (user) {
       setCurrentUser(user);
@@ -144,7 +156,9 @@ export default function App() {
 
   return (
     <>
-      {currentUser?.role === 'instructor' ? (
+      {currentUser?.role === 'admin' ? (
+        <AdminPlatform onBack={handleBackToLanding} user={currentUser} />
+      ) : currentUser?.role === 'instructor' ? (
         <InstructorPlatform onBack={handleBackToLanding} user={currentUser} />
       ) : (
         <AssessmentPlatform onBack={handleBackToLanding} user={currentUser} />

@@ -748,7 +748,7 @@ export function ListeningSection({ cefrLevel }: ListeningSectionProps) {
                 className="inline-flex items-center gap-2 text-sm font-medium text-gray-600 hover:text-indigo-600 transition-colors mb-2"
               >
                 <ArrowLeft className="w-4 h-4" />
-                Back to list
+                {t('common.backToList')}
               </button>
               <div className="flex items-center gap-3 w-full">
                 <div className="p-2.5 rounded-xl bg-gradient-to-br from-indigo-50 to-purple-50 border border-indigo-100">
@@ -875,7 +875,7 @@ export function ListeningSection({ cefrLevel }: ListeningSectionProps) {
                 }}
                 className="px-4 py-2.5 rounded-xl border border-gray-200 text-gray-700 font-semibold hover:bg-gray-50 transition-colors"
               >
-                Clear answers
+                {t('common.clearAnswers')}
               </button>
               <button
                 type="button"
@@ -883,7 +883,7 @@ export function ListeningSection({ cefrLevel }: ListeningSectionProps) {
                 disabled={exercise.questions.some((q) => !answers[q.id])}
                 className="px-4 py-2.5 rounded-xl bg-gradient-to-r from-indigo-600 to-purple-600 text-white font-semibold hover:shadow-lg transition-all disabled:opacity-50 disabled:cursor-not-allowed"
               >
-                Check answers
+                {t('common.checkAnswers')}
               </button>
             </div>
           </motion.div>

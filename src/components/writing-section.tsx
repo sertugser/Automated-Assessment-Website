@@ -23,6 +23,7 @@ import { saveActivity, getWritingStats, getActivitiesByType, getUserStats, getAc
 import { getCurrentUser } from '../lib/auth';
 import { createSubmission, getAssignment } from '../lib/assignments';
 import { toast } from 'sonner';
+import { useLanguage } from '../contexts/LanguageContext';
 
 interface WritingSectionProps {
   initialActivityId?: string | null;
@@ -120,6 +121,7 @@ const formatActivityDate = (dateString: string): string => {
 };
 
 export function WritingSection({ initialActivityId, assignmentId }: WritingSectionProps) {
+  const { t } = useLanguage();
   const [selectedPrompt, setSelectedPrompt] = useState<number | null>(null);
   const [essayText, setEssayText] = useState('');
   const [wordCount, setWordCount] = useState(0);
@@ -400,7 +402,7 @@ export function WritingSection({ initialActivityId, assignmentId }: WritingSecti
       toast.success(`Loaded text from ${file.name}`);
     } else if (extension === 'pdf') {
       setIsExtractingText(true);
-      const loadingToast = toast.loading(`Analiz ediliyor: ${file.name}...`, {
+      const loadingToast = toast.loading(t('writing.analyzingFile').replace('{fileName}', file.name), {
         duration: Infinity, // Toast'u manuel kapatana kadar açık tut
       });
       
@@ -440,14 +442,14 @@ export function WritingSection({ initialActivityId, assignmentId }: WritingSecti
       } catch (error) {
         console.error('PDF extraction error:', error);
         toast.dismiss(loadingToast);
-        toast.error(`PDF analizi başarısız: ${file.name}. Lütfen farklı bir dosya deneyin.`);
+        toast.error(t('writing.pdfAnalysisFailed').replace('{fileName}', file.name));
         setUploadedFile(null);
       } finally {
         setIsExtractingText(false);
       }
     } else if (extension === 'png' || extension === 'jpg' || extension === 'jpeg') {
       setIsExtractingText(true);
-      const loadingToast = toast.loading(`Analiz ediliyor: ${file.name}...`, {
+      const loadingToast = toast.loading(t('writing.analyzingFile').replace('{fileName}', file.name), {
         duration: Infinity,
       });
       
@@ -500,7 +502,7 @@ export function WritingSection({ initialActivityId, assignmentId }: WritingSecti
       } catch (error) {
         console.error('OCR error:', error);
         toast.dismiss(loadingToast);
-        toast.error(`Resim analizi başarısız: ${file.name}. Lütfen daha net bir resim veya .txt dosyası deneyin.`);
+        toast.error(t('writing.imageAnalysisFailed').replace('{fileName}', file.name));
         setUploadedFile(null);
       } finally {
         setIsExtractingText(false);
@@ -803,7 +805,7 @@ export function WritingSection({ initialActivityId, assignmentId }: WritingSecti
         </motion.div>
       </div>
 
-      <div className="grid lg:grid-cols-3 gap-8">
+      <div className="grid lg:grid-cols-3 gap-8 items-end">
         {/* Writing Area */}
         <div className="lg:col-span-2 space-y-6">
           {/* Writing Editor with prompt suggestions and upload */}
@@ -827,13 +829,13 @@ export function WritingSection({ initialActivityId, assignmentId }: WritingSecti
                       onClick={() => setSelectedPrompt(null)}
                       className="ml-2 text-xs text-gray-500 hover:text-gray-700 underline"
                     >
-                      Clear prompt
+                      {t('writing.clearPrompt')}
                     </button>
                   </p>
                 )}
                 {!selectedPrompt && (
                   <p className="text-sm text-gray-600 mt-1">
-                    Start typing freely or choose one of the prompts below as a starting point.
+                    {t('writing.startTyping')}
                   </p>
                 )}
               </div>
@@ -877,7 +879,7 @@ export function WritingSection({ initialActivityId, assignmentId }: WritingSecti
                         {(uploadedFile.size / 1024).toFixed(1)} KB
                         {isExtractingText && (
                           <span className="ml-2 text-indigo-600 font-medium">
-                            • Analiz ediliyor...
+                            • {t('writing.analyzing')}...
                           </span>
                         )}
                       </div>
@@ -991,7 +993,7 @@ export function WritingSection({ initialActivityId, assignmentId }: WritingSecti
                       }}
                       className="px-3 py-1 rounded-full text-xs font-semibold border border-indigo-200 text-indigo-700 bg-indigo-50 hover:bg-indigo-100 transition-colors"
                     >
-                      {showCorrectedInEditor ? 'Orijinal metni gör' : 'Düzeltilmiş metni gör'}
+                      {showCorrectedInEditor ? t('writing.viewOriginalText') : t('writing.viewCorrectedText')}
                     </button>
                   )}
                 </div>
@@ -1014,7 +1016,7 @@ export function WritingSection({ initialActivityId, assignmentId }: WritingSecti
                   spellCheck={false}
                   autoCorrect="off"
                   autoCapitalize="off"
-                  placeholder="Start writing your essay here or paste text from a file..."
+                  placeholder={t('writing.startWriting')}
                   className={`w-full h-96 p-4 border-2 border-gray-200 rounded-xl focus:border-indigo-500 focus:outline-none resize-none ${
                     showFeedback && showGeminiResult && geminiResult ? 'text-transparent caret-black' : ''
                   }`}
@@ -1054,12 +1056,12 @@ export function WritingSection({ initialActivityId, assignmentId }: WritingSecti
                 {isAnalyzing ? (
                   <>
                     <Sparkles className="w-5 h-5 animate-spin" />
-                    Analiz Ediliyor...
+                    {t('writing.analyzing')}...
                   </>
                 ) : (
                   <>
                     <Send className="w-5 h-5" />
-                    Submit for Feedback
+                    {t('writing.submitForFeedback')}
                   </>
                 )}
               </button>
@@ -1082,11 +1084,12 @@ export function WritingSection({ initialActivityId, assignmentId }: WritingSecti
                 }}
                 className="px-6 py-3 bg-gray-200 hover:bg-gray-300 text-gray-700 rounded-xl font-semibold transition-all"
               >
-                Clear
+                {t('writing.clear')}
               </button>
             </div>
 
           </motion.div>
+          <div className="flex-1"></div>
 
           {/* AI Feedback kutusu sol kolona alındı (Tips/Includes ile yer değiştirdi) */}
           {showFeedback && feedback ? (
@@ -1301,10 +1304,9 @@ export function WritingSection({ initialActivityId, assignmentId }: WritingSecti
             </div>
 
             {/* Recent Essays moved here (back to previous desired layout) */}
-            <div className="mt-5 pt-4 border-t border-indigo-200/70">
+            <div className="mt-5 pt-5 border-t border-indigo-200/70">
               <div className="flex items-center justify-between mb-3">
                 <h4 className="text-sm font-bold text-gray-900">Recent Essays</h4>
-                <span className="text-[11px] text-gray-500">Click to load</span>
               </div>
               <div className="space-y-2 max-h-40 overflow-y-auto scrollbar-visible pr-1">
                 {recentEssays.length > 0 ? (
@@ -1312,7 +1314,7 @@ export function WritingSection({ initialActivityId, assignmentId }: WritingSecti
                     <div
                       key={essay.id}
                       onClick={() => handleLoadRecentEssay(essay.id)}
-                      className="p-2 bg-white/80 rounded-xl hover:bg-white transition-colors cursor-pointer border border-indigo-100"
+                      className="p-2 bg-white/80 rounded-xl hover:bg-white hover:shadow-lg hover:scale-110 hover:border-indigo-300 transition-all duration-300 ease-out cursor-pointer border border-indigo-100 transform origin-center"
                     >
                       <div className="flex items-center justify-between mb-1">
                         <div className="font-semibold text-xs text-gray-900 truncate">{essay.title}</div>
