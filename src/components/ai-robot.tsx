@@ -1,6 +1,7 @@
 import { motion, AnimatePresence } from 'motion/react';
 import { Bot, X } from 'lucide-react';
-import { useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { generateAssistantReply, type AssistantChatMessage } from '../lib/ai-services';
 
 interface AIRobotProps {
   show: boolean;
@@ -9,12 +10,61 @@ interface AIRobotProps {
 export function AIRobot({ show }: AIRobotProps) {
   const [isOpen, setIsOpen] = useState(false);
   const [message, setMessage] = useState('');
+  const [isLoading, setIsLoading] = useState(false);
+  const [chatMessages, setChatMessages] = useState<AssistantChatMessage[]>([
+    {
+      role: 'assistant',
+      content: "Hi! I'm your AI learning assistant. How can I help you today?",
+    },
+  ]);
+  const chatMessagesRef = useRef<AssistantChatMessage[]>(chatMessages);
+  const messagesEndRef = useRef<HTMLDivElement | null>(null);
 
-  const quickMessages = [
-    'How do I get started?',
-    'What topics are available?',
-    'How does the AI feedback work?'
-  ];
+  const quickMessages = useMemo(
+    () => [
+      'How do I get started?',
+      'What topics are available?',
+      'How does the AI feedback work?',
+    ],
+    []
+  );
+
+  useEffect(() => {
+    chatMessagesRef.current = chatMessages;
+    if (!isOpen) return;
+    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+  }, [chatMessages, isOpen]);
+
+  const handleSend = async (text: string) => {
+    const trimmed = text.trim();
+    if (!trimmed || isLoading) return;
+
+    setMessage('');
+    setIsLoading(true);
+    setChatMessages((prev) => [...prev, { role: 'user', content: trimmed }]);
+
+    try {
+      const reply = await generateAssistantReply([
+        ...chatMessagesRef.current,
+        { role: 'user', content: trimmed },
+      ]);
+      setChatMessages((prev) => [...prev, { role: 'assistant', content: reply }]);
+    } catch (error) {
+      const errorMessage =
+        error instanceof Error
+          ? error.message
+          : 'Sorry, I could not respond right now. Please try again.';
+      setChatMessages((prev) => [
+        ...prev,
+        {
+          role: 'assistant',
+          content: errorMessage,
+        },
+      ]);
+    } finally {
+      setIsLoading(false);
+    }
+  };
 
   return (
     <AnimatePresence>
@@ -59,15 +109,20 @@ export function AIRobot({ show }: AIRobotProps) {
 
                 {/* Messages */}
                 <div className="p-4 h-64 overflow-y-auto bg-gray-50">
-                  <motion.div
-                    initial={{ opacity: 0, y: 10 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    className="bg-white p-3 rounded-lg shadow-sm mb-3"
-                  >
-                    <p className="text-sm text-gray-700">
-                      Hi! I&apos;m your AI learning assistant. How can I help you today?
-                    </p>
-                  </motion.div>
+                  {chatMessages.map((msg, idx) => (
+                    <motion.div
+                      key={`${msg.role}-${idx}`}
+                      initial={{ opacity: 0, y: 10 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      className={`p-3 rounded-lg shadow-sm mb-3 ${
+                        msg.role === 'assistant'
+                          ? 'bg-white text-gray-700'
+                          : 'bg-indigo-600 text-white ml-8'
+                      }`}
+                    >
+                      <p className="text-sm whitespace-pre-wrap">{msg.content}</p>
+                    </motion.div>
+                  ))}
 
                   {/* Quick Action Buttons */}
                   <div className="space-y-2">
@@ -77,13 +132,18 @@ export function AIRobot({ show }: AIRobotProps) {
                         initial={{ opacity: 0, x: -10 }}
                         animate={{ opacity: 1, x: 0 }}
                         transition={{ delay: index * 0.1 }}
-                        onClick={() => setMessage(msg)}
+                        onClick={() => handleSend(msg)}
                         className="w-full text-left text-sm bg-white border border-gray-200 p-3 rounded-lg hover:border-indigo-600 hover:bg-indigo-50 transition-all"
                       >
                         {msg}
                       </motion.button>
                     ))}
                   </div>
+
+                  {isLoading && (
+                    <div className="text-xs text-gray-500 mt-3">Assistant is typing...</div>
+                  )}
+                  <div ref={messagesEndRef} />
                 </div>
 
                 {/* Input */}
@@ -93,10 +153,21 @@ export function AIRobot({ show }: AIRobotProps) {
                       type="text"
                       value={message}
                       onChange={(e) => setMessage(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter') {
+                          e.preventDefault();
+                          handleSend(message);
+                        }
+                      }}
                       placeholder="Type your question..."
                       className="flex-1 px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:border-indigo-600 text-sm"
+                      disabled={isLoading}
                     />
-                    <button className="bg-gradient-to-r from-indigo-600 to-purple-600 text-white px-4 py-2 rounded-lg hover:shadow-lg transition-all">
+                    <button
+                      onClick={() => handleSend(message)}
+                      disabled={isLoading}
+                      className="bg-gradient-to-r from-indigo-600 to-purple-600 text-white px-4 py-2 rounded-lg hover:shadow-lg transition-all disabled:opacity-60 disabled:cursor-not-allowed"
+                    >
                       Send
                     </button>
                   </div>

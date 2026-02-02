@@ -306,6 +306,40 @@ const callAIWithBackup = async (prompt: string, systemPrompt: string, maxTokens?
   throw new Error(`All AI APIs failed. Please check your API keys.\n${errors.join('\n')}`);
 };
 
+export interface AssistantChatMessage {
+  role: 'user' | 'assistant';
+  content: string;
+}
+
+const ASSISTANT_SYSTEM_PROMPT =
+  'You are AssessAI, a friendly, concise English learning assistant. ' +
+  'Answer user questions clearly, keep responses short, and prefer practical guidance. ' +
+  'If asked about the platform, describe features like quizzes, writing, speaking, progress tracking. ' +
+  'If a question is unclear, ask a short clarifying question. ' +
+  'Avoid markdown lists unless the user asks for steps.';
+
+/**
+ * Generate a chat reply for the AI assistant widget.
+ */
+export const generateAssistantReply = async (
+  messages: AssistantChatMessage[],
+  maxTokens: number = 600
+): Promise<string> => {
+  if (!GROQ_API_KEY && !GEMINI_API_KEY) {
+    throw new Error('At least one API key (Groq or Gemini) must be configured');
+  }
+
+  const recent = messages.slice(-8);
+  const formatted = recent
+    .map((m) => `${m.role === 'user' ? 'User' : 'Assistant'}: ${m.content}`)
+    .join('\n');
+
+  const prompt = `${formatted}\nAssistant:`;
+  const response = await callAIWithBackup(prompt, ASSISTANT_SYSTEM_PROMPT, maxTokens);
+
+  return response.trim();
+};
+
 /**
  * Parse JSON response from AI (handles markdown code blocks)
  */
