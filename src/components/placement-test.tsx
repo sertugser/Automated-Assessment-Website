@@ -48,6 +48,7 @@ interface Question {
 const PLACEMENT_COUNT = 18;
 
 export function PlacementTest({ user, onComplete, onBack, isRetake }: PlacementTestProps) {
+  const { t } = useLanguage();
   const [questions, setQuestions] = useState<Question[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [started, setStarted] = useState(false);

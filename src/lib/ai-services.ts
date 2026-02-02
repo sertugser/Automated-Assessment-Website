@@ -3086,10 +3086,11 @@ Return ONLY a JSON array with this exact format (no markdown, no explanations):
   ...
 ]`;
 
-    const response = await callAIWithBackup(prompt, {
-      temperature: 0.8,
-      maxTokens: 2000,
-    });
+    const response = await callAIWithBackup(
+      prompt,
+      'Expert English teacher. Return JSON array of writing prompts only.',
+      2000
+    );
 
     // Parse JSON response
     let prompts: any[] = [];
@@ -3196,10 +3197,11 @@ Return ONLY a JSON array with this exact format (no markdown, no explanations):
   ...
 ]`;
 
-    const response = await callAIWithBackup(prompt, {
-      temperature: 0.8,
-      maxTokens: 2000,
-    });
+    const response = await callAIWithBackup(
+      prompt,
+      'Expert English teacher. Return JSON array of speaking topics only.',
+      2000
+    );
 
     // Parse JSON response
     let topics: any[] = [];

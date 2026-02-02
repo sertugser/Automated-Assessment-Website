@@ -313,6 +313,14 @@ export function SpeakingSection({ initialActivityId }: SpeakingSectionProps) {
     }
   };
 
+  const handleStopRecording = () => {
+    if (mediaRecorderRef.current && isRecording) {
+      mediaRecorderRef.current.stop();
+      setIsRecording(false);
+      setIsPaused(false);
+    }
+  };
+
   const handleTogglePause = () => {
     if (mediaRecorderRef.current) {
       if (isPaused) {
@@ -588,31 +596,37 @@ export function SpeakingSection({ initialActivityId }: SpeakingSectionProps) {
                 </span>
               </div>
               <div className="flex flex-wrap gap-2">
-                {speakingTopics.map((topic) => (
-                  <button
-                    key={topic.id}
-                    type="button"
-                    onClick={() => setSelectedTopic(topic.id)}
-                    className={`px-3 py-1 rounded-full text-xs font-medium border transition-all flex items-center gap-2 ${
-                      selectedTopic === topic.id
-                        ? 'bg-indigo-600 text-white border-indigo-600 shadow-sm'
-                        : 'bg-gray-50 text-gray-700 border-gray-200 hover:bg-gray-100'
-                    }`}
-                  >
-                    <span>{topic.title}</span>
-                    <span
-                      className={`px-1.5 py-0.5 rounded-full text-[10px] font-semibold ${
-                        topic.difficulty === 'Beginner'
-                          ? 'bg-green-100 text-green-700'
-                          : topic.difficulty === 'Intermediate'
-                            ? 'bg-yellow-100 text-yellow-700'
-                            : 'bg-red-100 text-red-700'
+                {loadingTopics ? (
+                  <div className="w-full p-4 bg-gray-50 rounded-xl text-center">
+                    <p className="text-sm text-gray-600">Loading speaking topics...</p>
+                  </div>
+                ) : speakingTopics.length === 0 ? null : (
+                  speakingTopics.map((topic) => (
+                    <button
+                      key={topic.id}
+                      type="button"
+                      onClick={() => setSelectedTopic(topic.id)}
+                      className={`px-3 py-1 rounded-full text-xs font-medium border transition-all flex items-center gap-2 ${
+                        selectedTopic === topic.id
+                          ? 'bg-indigo-600 text-white border-indigo-600 shadow-sm'
+                          : 'bg-gray-50 text-gray-700 border-gray-200 hover:bg-gray-100'
                       }`}
                     >
-                      {topic.difficulty}
-                    </span>
-                  </button>
-                ))}
+                      <span>{topic.title}</span>
+                      <span
+                        className={`px-1.5 py-0.5 rounded-full text-[10px] font-semibold ${
+                          topic.difficulty === 'Beginner'
+                            ? 'bg-green-100 text-green-700'
+                            : topic.difficulty === 'Intermediate'
+                              ? 'bg-yellow-100 text-yellow-700'
+                              : 'bg-red-100 text-red-700'
+                        }`}
+                      >
+                        {topic.difficulty}
+                      </span>
+                    </button>
+                  ))
+                )}
               </div>
             </div>
 
@@ -641,51 +655,81 @@ export function SpeakingSection({ initialActivityId }: SpeakingSectionProps) {
             {/* Recording + upload controls inside main speaking card */}
             <div className="mt-6 space-y-4">
               <div className="flex flex-wrap items-center gap-3">
-                <button
-                  type="button"
-                  onClick={() => handleStartRecording()}
-                  className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-red-500 hover:bg-red-600 text-white text-sm font-semibold shadow-sm transition-colors"
-                  disabled={isRecording}
-                >
-                  <Mic className="w-4 h-4" />
-                  {isRecording ? 'Recording...' : 'Start Recording'}
-                </button>
+                {!isRecording ? (
+                  <button
+                    type="button"
+                    onClick={() => handleStartRecording()}
+                    style={{ backgroundColor: '#dc2626', color: '#ffffff' }}
+                    className="inline-flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-semibold shadow-sm focus:ring-2 focus:ring-red-400 focus:ring-offset-2 focus:outline-none border-0 hover:opacity-90 active:opacity-95"
+                  >
+                    <Mic className="w-4 h-4" style={{ color: '#ffffff' }} />
+                    Start Recording
+                  </button>
+                ) : (
+                  <>
+                    <button
+                      type="button"
+                      onClick={handleStopRecording}
+                      style={{ backgroundColor: '#b91c1c', color: '#ffffff' }}
+                      className="inline-flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-semibold border-0 hover:opacity-90 active:opacity-95 focus:outline-none focus:ring-2 focus:ring-red-400 focus:ring-offset-2"
+                    >
+                      <Square className="w-4 h-4" style={{ color: '#ffffff' }} />
+                      Stop Recording
+                    </button>
+                    <button
+                      type="button"
+                      onClick={handleTogglePause}
+                      style={{ backgroundColor: '#b91c1c', color: '#ffffff' }}
+                      className="inline-flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-semibold border-0 hover:opacity-90 active:opacity-95 focus:outline-none focus:ring-2 focus:ring-red-400 focus:ring-offset-2"
+                    >
+                      {isPaused ? <Play className="w-4 h-4" style={{ color: '#ffffff' }} /> : <Pause className="w-4 h-4" style={{ color: '#ffffff' }} />}
+                      {isPaused ? 'Resume' : 'Pause'}
+                    </button>
+                    <div className="flex items-center gap-2 px-3 py-2 bg-gray-100 rounded-xl">
+                      <div className="w-2 h-2 bg-red-500 rounded-full animate-pulse"></div>
+                      <span className="text-sm font-semibold text-gray-700">
+                        {Math.floor(recordingTime / 60)}:{(recordingTime % 60).toString().padStart(2, '0')}
+                      </span>
+                    </div>
+                  </>
+                )}
 
-                <button
-                  type="button"
-                  onClick={handleAnalyze}
-                  className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-gradient-to-r from-indigo-600 to-purple-600 text-white text-sm font-semibold hover:shadow-lg transition-all"
-                >
-                  <Sparkles className="w-4 h-4" />
-                  Analyze
-                </button>
-                <button
-                  type="button"
-                  onClick={handleTogglePause}
-                  disabled={!isRecording}
-                  className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-yellow-400 hover:bg-yellow-500 text-white text-sm font-semibold transition-colors disabled:opacity-60 disabled:cursor-not-allowed"
-                >
-                  {isPaused ? <Play className="w-4 h-4" /> : <Pause className="w-4 h-4" />}
-                  {isPaused ? 'Resume' : 'Pause'}
-                </button>
+                {/* Upload to System button - only show when recording is stopped and audio exists */}
+                {!isRecording && currentAudioBlob && (
+                  <button
+                    type="button"
+                    onClick={handleAnalyze}
+                    disabled={isAnalyzing}
+                    className="inline-flex items-center gap-2 px-5 py-2 rounded-xl bg-gradient-to-r from-green-500 to-green-600 text-white text-sm font-semibold hover:shadow-lg transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    <Upload className="w-4 h-4" />
+                    {isAnalyzing ? 'Uploading & Analyzing...' : 'Upload to System & Analyze'}
+                  </button>
+                )}
 
-                <button
-                  type="button"
-                  onClick={() => fileInputRef.current?.click()}
-                  className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-semibold shadow-sm transition-colors"
-                >
-                  <Upload className="w-4 h-4" />
-                  Upload audio
-                </button>
+                {/* Upload audio file from computer */}
+                {!isRecording && !currentAudioBlob && (
+                  <button
+                    type="button"
+                    onClick={() => fileInputRef.current?.click()}
+                    className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-semibold shadow-sm transition-colors"
+                  >
+                    <Upload className="w-4 h-4" />
+                    Upload Audio File
+                  </button>
+                )}
 
-                <button
-                  type="button"
-                  onClick={handleClearPreAnalysis}
-                  className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-gray-100 hover:bg-gray-200 text-gray-700 text-sm font-semibold transition-colors"
-                >
-                  <Trash className="w-4 h-4" />
-                  Clear
-                </button>
+                {/* Clear button - only show when not recording */}
+                {!isRecording && (currentAudioBlob || preAnalysisText || feedback) && (
+                  <button
+                    type="button"
+                    onClick={handleClearPreAnalysis}
+                    className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-gray-100 hover:bg-gray-200 text-gray-700 text-sm font-semibold transition-colors"
+                  >
+                    <Trash className="w-4 h-4" />
+                    Clear & Start New
+                  </button>
+                )}
 
                 <input
                   ref={fileInputRef}
