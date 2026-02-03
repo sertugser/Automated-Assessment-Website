@@ -32,6 +32,30 @@ interface WritingSectionProps {
 }
 
 // Writing prompts are now generated dynamically by AI - no hard-coded data
+const getFallbackWritingPrompts = (cefrLevel?: string | null) => {
+  const level = (cefrLevel || '').toUpperCase();
+  const difficulty =
+    level === 'C1' || level === 'C2'
+      ? 'Advanced'
+      : level === 'B1' || level === 'B2'
+        ? 'Intermediate'
+        : 'Beginner';
+  const wordCount =
+    difficulty === 'Advanced' ? '180-250' : difficulty === 'Intermediate' ? '120-180' : '80-120';
+  return [
+    {
+      id: 1,
+      title: 'Daily Routine',
+      description: 'Write about your daily routine. Include at least three time expressions (e.g., in the morning, at noon).',
+      difficulty,
+      wordCount,
+      color: 'from-indigo-500 to-indigo-600',
+      bgColor: 'bg-indigo-50',
+      completed: false,
+      score: null,
+    },
+  ];
+};
 
 // Helper function to format date
 const formatActivityDate = (dateString: string): string => {
@@ -200,8 +224,10 @@ export function WritingSection({ initialActivityId, assignmentId }: WritingSecti
         setVisibleTopicIds(prompts.slice(0, 4).map((p) => p.id));
       } catch (error) {
         console.error('Error loading writing prompts:', error);
-        toast.error('Failed to load writing prompts. Please check your API keys.');
-        // Show empty state - no hard-coded fallback
+        const user = getCurrentUser();
+        const fallback = getFallbackWritingPrompts(user?.cefrLevel ?? null);
+        setWritingPrompts(fallback);
+        setVisibleTopicIds(fallback.map(p => p.id));
       } finally {
         setLoadingPrompts(false);
       }
@@ -534,11 +560,13 @@ export function WritingSection({ initialActivityId, assignmentId }: WritingSecti
       
       // Save writing activity to progress tracking
       const selectedPromptData = writingPrompts.find(p => p.id === selectedPrompt);
-      const courseTitle = selectedPromptData?.title || 'Writing Practice';
+      const assignment = assignmentId ? getAssignment(assignmentId) : null;
+      const courseTitle = assignment?.title || selectedPromptData?.title || 'Writing Practice';
       saveActivity({
         type: 'writing',
         score: computedOverall,
         courseTitle,
+        courseId: assignment?.courseId,
         wordCount: wordCount,
         essayText: essayText,
         correctedText: simpleGemini.corrected_text,

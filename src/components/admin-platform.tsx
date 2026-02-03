@@ -6,7 +6,7 @@ import {
   Search, Filter, Download, RefreshCw, Eye, EyeOff, Lock, Save, X
 } from 'lucide-react';
 import { getUsers, deleteUser, updateUser, getCurrentUser, logout, changePassword, type User as UserType } from '../lib/auth';
-import { getUserStats, getActivities, type UserActivity } from '../lib/user-progress';
+import { getUserStats, getActivitiesForUser, type UserActivity } from '../lib/user-progress';
 import { toast } from 'sonner';
 import { useLanguage } from '../contexts/LanguageContext';
 
@@ -58,8 +58,8 @@ export function AdminPlatform({ onBack, user }: AdminPlatformProps) {
 
   const loadStats = () => {
     const allUsers = getUsers();
-    const allActivities = getActivities();
-    const activeUserIds = new Set(allActivities.map(a => a.userId).filter(Boolean));
+    const allActivities = allUsers.flatMap(u => getActivitiesForUser(u.id));
+    const activeUserIds = new Set(allUsers.filter(u => getActivitiesForUser(u.id).length > 0).map(u => u.id));
     
     setStats({
       totalUsers: allUsers.length,
@@ -169,12 +169,12 @@ export function AdminPlatform({ onBack, user }: AdminPlatformProps) {
 
   const getUserActivities = (userId: string): UserActivity[] => {
     // Always get fresh activities from localStorage
-    return getActivities().filter(a => a.userId === userId);
+    return getActivitiesForUser(userId);
   };
 
   const getUserStatsForUser = (userId: string) => {
     // Always get fresh activities from localStorage
-    const activities = getActivities().filter(a => a.userId === userId);
+    const activities = getActivitiesForUser(userId);
     if (activities.length === 0) {
       return {
         totalActivities: 0,

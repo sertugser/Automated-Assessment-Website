@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { motion } from 'motion/react';
 import { Headphones, PlayCircle, PauseCircle, RotateCcw, CheckCircle2, BookOpen, Sparkles, ArrowLeft, List } from 'lucide-react';
 import { useLanguage } from '../contexts/LanguageContext';
+import { generateListeningQuestions } from '../lib/ai-services';
 import type { CEFRLevel } from '../lib/auth';
 
 type Level = CEFRLevel;
@@ -476,11 +477,15 @@ export function ListeningSection({ cefrLevel }: ListeningSectionProps) {
   const [currentPlaybackTime, setCurrentPlaybackTime] = useState(0);
   const [answers, setAnswers] = useState<Record<string, string>>({});
   const [submitted, setSubmitted] = useState(false);
+  const [aiQuestions, setAiQuestions] = useState<ListeningExercise['questions'] | null>(null);
+  const [loadingQuestions, setLoadingQuestions] = useState(false);
 
   const exercisesForLevel = EXERCISES_BY_LEVEL[selectedLevel];
   const exercise = selectedExerciseId
     ? exercisesForLevel.find((e) => e.id === selectedExerciseId) ?? null
     : null;
+
+  const questions = aiQuestions ?? exercise?.questions ?? [];
 
   const sentences = useMemo(
     () => (exercise ? splitSentences(exercise.text) : []),
@@ -502,6 +507,7 @@ export function ListeningSection({ cefrLevel }: ListeningSectionProps) {
 
   useEffect(() => {
     setSelectedExerciseId(null);
+    setAiQuestions(null);
   }, [selectedLevel]);
 
   useEffect(() => {
@@ -524,6 +530,34 @@ export function ListeningSection({ cefrLevel }: ListeningSectionProps) {
     window.speechSynthesis?.cancel();
     setIsPlaying(false);
   }, [selectedLevel, selectedExerciseId]);
+
+  useEffect(() => {
+    if (!exercise) {
+      setAiQuestions(null);
+      return;
+    }
+    let active = true;
+    setLoadingQuestions(true);
+    generateListeningQuestions(exercise.text, selectedLevel, exercise.questions.length, exercise.title)
+      .then((qs) => {
+        if (!active) return;
+        setAiQuestions(qs);
+        setAnswers({});
+        setSubmitted(false);
+      })
+      .catch((error) => {
+        console.error('Failed to generate listening questions:', error);
+        if (!active) return;
+        setAiQuestions(exercise.questions);
+      })
+      .finally(() => {
+        if (!active) return;
+        setLoadingQuestions(false);
+      });
+    return () => {
+      active = false;
+    };
+  }, [exercise?.id, selectedLevel]);
 
   // Extra safeguard: clear answers when the displayed exercise id changes (e.g. direct prop/context change)
   const exerciseIdRef = useRef<string | null>(null);
@@ -643,10 +677,10 @@ export function ListeningSection({ cefrLevel }: ListeningSectionProps) {
 
   const score = useMemo(() => {
     if (!exercise) return { correctCount: 0, total: 0 };
-    const total = exercise.questions.length;
-    const correctCount = exercise.questions.reduce((acc, q) => acc + (answers[q.id] === q.correct ? 1 : 0), 0);
+    const total = questions.length;
+    const correctCount = questions.reduce((acc, q) => acc + (answers[q.id] === q.correct ? 1 : 0), 0);
     return { correctCount, total };
-  }, [exercise, answers]);
+  }, [exercise, answers, questions]);
 
   const hasTTS = typeof window !== 'undefined' && 'speechSynthesis' in window;
 
@@ -822,6 +856,9 @@ export function ListeningSection({ cefrLevel }: ListeningSectionProps) {
           >
             <div className="flex items-center justify-between gap-4 mb-4">
               <h3 className="text-lg font-bold text-gray-900">Questions</h3>
+              {loadingQuestions && (
+                <span className="text-xs text-gray-500">AI questions are loading...</span>
+              )}
               {submitted && (
                 <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-green-50 text-green-700 border border-green-200 text-sm font-semibold">
                   <CheckCircle2 className="w-4 h-4" />
@@ -830,7 +867,7 @@ export function ListeningSection({ cefrLevel }: ListeningSectionProps) {
               )}
             </div>
             <div className="space-y-4">
-              {exercise.questions.map((q, idx) => (
+              {questions.map((q, idx) => (
                 <div key={q.id} className="p-4 rounded-xl border border-gray-200 bg-gray-50/50">
                   <div className="font-semibold text-gray-900 mb-3">
                     {idx + 1}. {q.question}
@@ -880,7 +917,7 @@ export function ListeningSection({ cefrLevel }: ListeningSectionProps) {
               <button
                 type="button"
                 onClick={() => setSubmitted(true)}
-                disabled={exercise.questions.some((q) => !answers[q.id])}
+                disabled={questions.some((q) => !answers[q.id])}
                 className="px-4 py-2.5 rounded-xl bg-gradient-to-r from-indigo-600 to-purple-600 text-white font-semibold hover:shadow-lg transition-all disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 {t('common.checkAnswers')}

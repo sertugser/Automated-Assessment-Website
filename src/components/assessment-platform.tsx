@@ -20,6 +20,8 @@ import { HomeworkSection } from './homework-section';
 import { type User as UserType, updateUser, getCurrentUser } from '../lib/auth';
 import { getUserStats, getRecentActivities, saveActivity, analyzeUserWeaknesses, getMistakeCountsByTopic, getWrongAnswerDetails, getActivitiesByType, getActivities, type UserActivity } from '../lib/user-progress';
 import { generatePersonalizedRecommendations, getLearningDifficultyAnalysis, getCommonMistakesAnalysis, type LearningDifficultyAnalysis, type CommonMistakeAnalysis } from '../lib/ai-services';
+import { getAssignment } from '../lib/assignments';
+import { getNotificationsForStudent, markNotificationRead, deleteNotification, markAllNotificationsRead, type AssignmentNotification } from '../lib/notifications';
 import { useLanguage } from '../contexts/LanguageContext';
 import logo from '../assets/fbaa49f59eaf54473f226d88f4a207918ca971f2.png';
 
@@ -88,6 +90,7 @@ export function AssessmentPlatform({ onBack, user }: AssessmentPlatformProps) {
   const [commonMistakes, setCommonMistakes] = useState<CommonMistakeAnalysis[]>([]);
   const [loadingCommonMistakes, setLoadingCommonMistakes] = useState(true);
   const [initialSpeakingActivityId, setInitialSpeakingActivityId] = useState<string | null>(null);
+  const [initialSpeakingAssignmentId, setInitialSpeakingAssignmentId] = useState<string | null>(null);
   const [initialWritingActivityId, setInitialWritingActivityId] = useState<string | null>(null);
   const [initialWritingAssignmentId, setInitialWritingAssignmentId] = useState<string | null>(null);
   const [initialQuizActivityId, setInitialQuizActivityId] = useState<string | null>(null);
@@ -97,6 +100,8 @@ export function AssessmentPlatform({ onBack, user }: AssessmentPlatformProps) {
   const [profileDropdownOpen, setProfileDropdownOpen] = useState(false);
   const [notificationPanelOpen, setNotificationPanelOpen] = useState(false);
   const [difficultyRefreshTrigger, setDifficultyRefreshTrigger] = useState(0);
+  const [notifications, setNotifications] = useState<AssignmentNotification[]>([]);
+  const [unreadCount, setUnreadCount] = useState(0);
 
   // Close study plan dropdown when clicking outside
   useEffect(() => {
@@ -133,6 +138,24 @@ export function AssessmentPlatform({ onBack, user }: AssessmentPlatformProps) {
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, [profileDropdownOpen, notificationPanelOpen]);
 
+  const refreshNotifications = () => {
+    if (!currentUser?.id) return;
+    const items = getNotificationsForStudent(currentUser.id);
+    setNotifications(items);
+    setUnreadCount(items.filter(n => !n.readAt).length);
+  };
+
+  useEffect(() => {
+    refreshNotifications();
+    const interval = setInterval(refreshNotifications, 2000);
+    const handleStorage = () => refreshNotifications();
+    window.addEventListener('storage', handleStorage);
+    return () => {
+      clearInterval(interval);
+      window.removeEventListener('storage', handleStorage);
+    };
+  }, [currentUser?.id]);
+
   // Persist last visited screen so refresh returns the user to the same tab
   useEffect(() => {
     const saved = localStorage.getItem('assessai_current_screen') as Screen | null;
@@ -153,6 +176,12 @@ export function AssessmentPlatform({ onBack, user }: AssessmentPlatformProps) {
   useEffect(() => {
     if (currentScreen !== 'writing') {
       setInitialWritingAssignmentId(null);
+    }
+  }, [currentScreen]);
+
+  useEffect(() => {
+    if (currentScreen !== 'speaking') {
+      setInitialSpeakingAssignmentId(null);
     }
   }, [currentScreen]);
 
@@ -548,6 +577,38 @@ export function AssessmentPlatform({ onBack, user }: AssessmentPlatformProps) {
     }
   };
 
+  const handleOpenNotification = (notif: AssignmentNotification) => {
+    if (currentUser?.id) {
+      markAllNotificationsRead(currentUser.id);
+    } else {
+      markNotificationRead(notif.id);
+    }
+    refreshNotifications();
+    setNotificationPanelOpen(false);
+
+    const assignment = getAssignment(notif.assignmentId);
+    const type = notif.assignmentType || assignment?.type;
+    const courseId = notif.courseId || assignment?.courseId;
+
+    if (type === 'writing' || type === 'handwriting') {
+      setInitialWritingAssignmentId(notif.assignmentId);
+      setInitialWritingActivityId(null);
+      navigateToScreen('writing');
+      return;
+    }
+    if (type === 'quiz' && courseId) {
+      setInitialQuizAssignmentId(notif.assignmentId);
+      handleCourseSelect(courseId);
+      return;
+    }
+    if (type === 'speaking') {
+      setInitialSpeakingAssignmentId(notif.assignmentId);
+      navigateToScreen('speaking');
+      return;
+    }
+    navigateToScreen('homework');
+  };
+
   return (
     <div className="min-h-screen bg-gradient-to-br from-indigo-50 via-purple-50 to-pink-50">
       {/* Combined Header and Navigation */}
@@ -691,7 +752,7 @@ export function AssessmentPlatform({ onBack, user }: AssessmentPlatformProps) {
               <div className="relative" data-notification-panel>
                 <button
                   onClick={() => setNotificationPanelOpen(!notificationPanelOpen)}
-                  className={`flex items-center justify-center gap-1 px-3 py-2.5 text-sm font-medium transition-all rounded-lg ${
+                  className={`relative flex items-center justify-center gap-1 px-3 py-2.5 text-sm font-medium transition-all rounded-lg ${
                     notificationPanelOpen
                       ? 'text-purple-700 bg-purple-100'
                       : 'text-gray-600 hover:text-gray-900 hover:bg-gray-50'
@@ -699,15 +760,81 @@ export function AssessmentPlatform({ onBack, user }: AssessmentPlatformProps) {
                   title={t('nav.notificationCenter')}
                 >
                   <Bell className="w-5 h-5" />
+                  {unreadCount > 0 && (
+                    <span className="absolute top-1 right-1 inline-flex h-2 w-2 rounded-full bg-red-500 ring-2 ring-white"></span>
+                  )}
                 </button>
                 {notificationPanelOpen && (
-                  <div className="absolute right-0 top-full mt-2 w-64 bg-white rounded-xl shadow-lg border border-gray-200 overflow-hidden z-50">
+                  <div className="absolute right-0 top-full mt-2 w-80 bg-white rounded-xl shadow-lg border border-gray-200 overflow-hidden z-50">
                     <div className="p-4 border-b border-gray-100">
-                      <h3 className="font-semibold text-gray-900">{t('nav.notificationCenter')}</h3>
+                      <div className="flex items-center justify-between gap-2">
+                        <h3 className="font-semibold text-gray-900">{t('nav.notificationCenter')}</h3>
+                        {notifications.some(n => !n.readAt) && (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              if (currentUser?.id) markAllNotificationsRead(currentUser.id);
+                              refreshNotifications();
+                            }}
+                            className="text-xs font-medium text-indigo-600 hover:text-indigo-700"
+                          >
+                            {t('nav.markAllRead')}
+                          </button>
+                        )}
+                      </div>
                     </div>
-                    <div className="p-6">
-                      <p className="text-sm text-gray-500 text-center">{t('nav.noNotifications')}</p>
-                    </div>
+                    {notifications.length === 0 ? (
+                      <div className="p-6">
+                        <p className="text-sm text-gray-500 text-center">{t('nav.noNotifications')}</p>
+                      </div>
+                    ) : (
+                      <div className="max-h-80 overflow-y-auto divide-y divide-gray-100">
+                        {notifications.map((n) => (
+                          <div
+                            key={n.id}
+                            className={`flex items-start gap-3 px-4 py-3 ${n.readAt ? 'bg-white' : 'bg-indigo-50/40'}`}
+                          >
+                            <button
+                              type="button"
+                              onClick={() => handleOpenNotification(n)}
+                              className="flex-1 text-left"
+                            >
+                              <div className="text-sm font-semibold text-gray-900">
+                                {t('nav.assignmentAssigned')}
+                              </div>
+                              <div className="text-xs text-gray-600 truncate">{n.assignmentTitle}</div>
+                              <div className="text-[11px] text-gray-400 mt-1">
+                                {new Date(n.createdAt).toLocaleString()}
+                              </div>
+                            </button>
+                            <div className="flex flex-col gap-1 text-xs shrink-0">
+                              {!n.readAt && (
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    markNotificationRead(n.id);
+                                    refreshNotifications();
+                                  }}
+                                  className="px-2 py-1 rounded bg-indigo-600 text-white hover:bg-indigo-700"
+                                >
+                                  {t('nav.markRead')}
+                                </button>
+                              )}
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  deleteNotification(n.id);
+                                  refreshNotifications();
+                                }}
+                                className="px-2 py-1 rounded bg-gray-100 text-gray-700 hover:bg-gray-200"
+                              >
+                                {t('nav.delete')}
+                              </button>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    )}
                   </div>
                 )}
               </div>
@@ -788,7 +915,10 @@ export function AssessmentPlatform({ onBack, user }: AssessmentPlatformProps) {
           <ProgressSection />
         )}
         {currentScreen === 'speaking' && (
-          <SpeakingSection initialActivityId={initialSpeakingActivityId} />
+          <SpeakingSection
+            initialActivityId={initialSpeakingActivityId}
+            assignmentId={initialSpeakingAssignmentId}
+          />
         )}
         {currentScreen === 'listening' && (
           <ListeningSection cefrLevel={currentUser?.cefrLevel ?? null} />
@@ -840,6 +970,7 @@ export function AssessmentPlatform({ onBack, user }: AssessmentPlatformProps) {
                 handleCourseSelect(courseId);
               } else if (type === 'speaking') {
                 setInitialSpeakingActivityId(null);
+                setInitialSpeakingAssignmentId(assignmentId);
                 navigateToScreen('speaking');
               } else {
                 navigateToScreen(type === 'writing' ? 'writing' : type === 'quiz' ? 'quiz' : 'speaking');

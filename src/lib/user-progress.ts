@@ -21,6 +21,7 @@ function getCurrentUserId(): string | null {
 
 export interface UserActivity {
   id: string;
+  userId?: string;
   type: 'quiz' | 'writing' | 'speaking';
   score: number;
   date: string; // ISO date string
@@ -76,6 +77,7 @@ export const saveActivity = (activity: Omit<UserActivity, 'id' | 'date'>): void 
     ...activity,
     id: `activity_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
     date: new Date().toISOString(),
+    userId,
   };
 
   activities.push(newActivity);
@@ -95,6 +97,22 @@ export const getActivities = (): UserActivity[] => {
   try {
     const stored = localStorage.getItem(getStorageKey(userId));
     return stored ? JSON.parse(stored) : [];
+  } catch {
+    return [];
+  }
+};
+
+/**
+ * Get all user activities for a specific user (admin use)
+ */
+export const getActivitiesForUser = (userId: string): UserActivity[] => {
+  if (!userId) return [];
+  try {
+    const stored = localStorage.getItem(getStorageKey(userId));
+    const activities = stored ? JSON.parse(stored) : [];
+    return Array.isArray(activities)
+      ? activities.map((a: UserActivity) => ({ ...a, userId }))
+      : [];
   } catch {
     return [];
   }
@@ -785,6 +803,8 @@ export interface MistakeCountByTopic {
 
 export const getMistakeCountsByTopic = (): MistakeCountByTopic[] => {
   const quizActivities = getActivitiesByType('quiz');
+  const writingActivities = getActivitiesByType('writing');
+  const speakingActivities = getActivitiesByType('speaking');
   const counts: Record<string, number> = {};
 
   for (const activity of quizActivities) {
@@ -800,6 +820,31 @@ export const getMistakeCountsByTopic = (): MistakeCountByTopic[] => {
       if (!isWrong) continue;
 
       const topic = (q.topic || activity.courseTitle || 'General').trim() || 'General';
+      counts[topic] = (counts[topic] ?? 0) + 1;
+    }
+  }
+
+  // Writing mistakes (from AI feedback)
+  for (const activity of writingActivities as any[]) {
+    const feedback = activity.writingDetailedFeedback;
+    const errors = feedback?.grammar?.errors || [];
+    for (const err of errors) {
+      const topic = `Writing Grammar: ${err.type || 'Grammar'}`.trim();
+      counts[topic] = (counts[topic] ?? 0) + 1;
+    }
+  }
+
+  // Speaking mistakes (from AI feedback)
+  for (const activity of speakingActivities as any[]) {
+    const feedback = activity.speakingFeedback;
+    const grammarErrors = feedback?.grammar?.errors || [];
+    for (const err of grammarErrors) {
+      const topic = `Speaking Grammar: ${err.type || 'Grammar'}`.trim();
+      counts[topic] = (counts[topic] ?? 0) + 1;
+    }
+    const pronunciationErrors = feedback?.pronunciation?.errors || [];
+    for (const err of pronunciationErrors) {
+      const topic = `Pronunciation: ${err.word || 'Word'}`.trim();
       counts[topic] = (counts[topic] ?? 0) + 1;
     }
   }
@@ -823,6 +868,8 @@ export interface WrongAnswerDetail {
 
 export const getWrongAnswerDetails = (limit: number = 24): WrongAnswerDetail[] => {
   const quizActivities = getActivitiesByType('quiz');
+  const writingActivities = getActivitiesByType('writing');
+  const speakingActivities = getActivitiesByType('speaking');
   const out: WrongAnswerDetail[] = [];
   const desc = [...quizActivities].sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
 
@@ -846,6 +893,54 @@ export const getWrongAnswerDetails = (limit: number = 24): WrongAnswerDetail[] =
         userAnswer: userText.slice(0, 200),
         correctAnswer: correctText.slice(0, 200),
         explanation: (q.explanation || '').slice(0, 400),
+        topic,
+      });
+    }
+  }
+
+  // Add writing errors as wrong-answer details
+  for (const activity of writingActivities as any[]) {
+    if (out.length >= limit) break;
+    const feedback = activity.writingDetailedFeedback;
+    const errors = feedback?.grammar?.errors || [];
+    for (const err of errors) {
+      if (out.length >= limit) break;
+      const topic = `Writing Grammar: ${err.type || 'Grammar'}`.trim();
+      out.push({
+        question: `Writing error: ${String(err.message || 'Grammar issue').slice(0, 200)}`,
+        userAnswer: String(err.message || '').slice(0, 200),
+        correctAnswer: String(err.suggestion || '').slice(0, 200),
+        explanation: String(err.suggestion || err.message || '').slice(0, 400),
+        topic,
+      });
+    }
+  }
+
+  // Add speaking errors as wrong-answer details
+  for (const activity of speakingActivities as any[]) {
+    if (out.length >= limit) break;
+    const feedback = activity.speakingFeedback;
+    const grammarErrors = feedback?.grammar?.errors || [];
+    for (const err of grammarErrors) {
+      if (out.length >= limit) break;
+      const topic = `Speaking Grammar: ${err.type || 'Grammar'}`.trim();
+      out.push({
+        question: `Speaking error: ${String(err.message || 'Grammar issue').slice(0, 200)}`,
+        userAnswer: String(err.message || '').slice(0, 200),
+        correctAnswer: String(err.suggestion || '').slice(0, 200),
+        explanation: String(err.suggestion || err.message || '').slice(0, 400),
+        topic,
+      });
+    }
+    const pronunciationErrors = feedback?.pronunciation?.errors || [];
+    for (const err of pronunciationErrors) {
+      if (out.length >= limit) break;
+      const topic = `Pronunciation: ${err.word || 'Word'}`.trim();
+      out.push({
+        question: `Pronunciation of "${String(err.word || '').slice(0, 60)}"`,
+        userAnswer: String(err.actual || '').slice(0, 200),
+        correctAnswer: String(err.expected || '').slice(0, 200),
+        explanation: `Expected "${err.expected || ''}", heard "${err.actual || ''}".`.slice(0, 400),
         topic,
       });
     }

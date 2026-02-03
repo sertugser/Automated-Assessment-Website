@@ -19,9 +19,32 @@ import {
 import { analyzeSpeaking, type AIFeedback, generatePersonalizedTips, generateSpeakingTopics } from '../lib/ai-services';
 import { saveActivity, getSpeakingStats, getActivitiesByType, getUserStats, getActivities } from '../lib/user-progress';
 import { getCurrentUser } from '../lib/auth';
+import { getAssignment } from '../lib/assignments';
 import { toast } from 'sonner';
 
 // Speaking topics are now generated dynamically by AI - no hard-coded data
+const getFallbackSpeakingTopics = (cefrLevel?: string | null) => {
+  const level = (cefrLevel || '').toUpperCase();
+  const difficulty =
+    level === 'C1' || level === 'C2'
+      ? 'Advanced'
+      : level === 'B1' || level === 'B2'
+        ? 'Intermediate'
+        : 'Beginner';
+  return [
+    {
+      id: 1,
+      title: 'Describe Your Day',
+      description: 'Talk about your typical day and the activities you do from morning to evening.',
+      difficulty,
+      duration: '2-3 min',
+      color: 'from-indigo-500 to-indigo-600',
+      bgColor: 'bg-indigo-50',
+      completed: false,
+      score: null,
+    },
+  ];
+};
 
 // Helper function to format date
 const formatActivityDate = (dateString: string): string => {
@@ -51,9 +74,10 @@ const formatDuration = (): string => {
 
 interface SpeakingSectionProps {
   initialActivityId?: string | null;
+  assignmentId?: string | null;
 }
 
-export function SpeakingSection({ initialActivityId }: SpeakingSectionProps) {
+export function SpeakingSection({ initialActivityId, assignmentId }: SpeakingSectionProps) {
   const [isRecording, setIsRecording] = useState(false);
   const [isPaused, setIsPaused] = useState(false);
   const [recordingTime, setRecordingTime] = useState(0);
@@ -220,8 +244,8 @@ export function SpeakingSection({ initialActivityId }: SpeakingSectionProps) {
         setSpeakingTopics(topics);
       } catch (error) {
         console.error('Error loading speaking topics:', error);
-        toast.error('Failed to load speaking topics. Please check your API keys.');
-        // Show empty state - no hard-coded fallback
+        const user = getCurrentUser();
+        setSpeakingTopics(getFallbackSpeakingTopics(user?.cefrLevel ?? null));
       } finally {
         setLoadingTopics(false);
       }
@@ -456,10 +480,12 @@ export function SpeakingSection({ initialActivityId }: SpeakingSectionProps) {
       }
 
       const selectedTopicData = speakingTopics.find(t => t.id === selectedTopic);
+      const assignment = assignmentId ? getAssignment(assignmentId) : null;
       saveActivity({
         type: 'speaking',
         score: computedOverall,
-        courseTitle: selectedTopicData?.title || 'Speaking Practice',
+        courseTitle: assignment?.title || selectedTopicData?.title || 'Speaking Practice',
+        courseId: assignment?.courseId,
         speakingTranscript: transcript,
         speakingFeedback: normalizedFeedback,
       });

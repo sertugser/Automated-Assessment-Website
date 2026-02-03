@@ -118,6 +118,13 @@ export interface SimpleWritingAnalysis {
   errors: SimpleWritingAnalysisError[];
 }
 
+export interface ListeningQuestion {
+  id: string;
+  question: string;
+  options: string[];
+  correct: string;
+}
+
 /**
  * Call Groq API (Primary)
  */
@@ -577,6 +584,65 @@ export const analyzeSpeaking = async (
     console.error('Error analyzing speaking:', error);
     throw new Error(`Failed to analyze speaking: ${error instanceof Error ? error.message : 'Unknown error'}`);
   }
+};
+
+/**
+ * Generate listening comprehension questions from a transcript
+ */
+export const generateListeningQuestions = async (
+  transcript: string,
+  cefrLevel?: CEFRLevel | null,
+  questionCount: number = 10,
+  title?: string
+): Promise<ListeningQuestion[]> => {
+  if (!transcript || transcript.trim().length < 30) {
+    throw new Error('Transcript is too short to generate listening questions.');
+  }
+  if (!GROQ_API_KEY && !GEMINI_API_KEY) {
+    throw new Error('At least one API key (Groq or Gemini) must be configured');
+  }
+
+  const levelNote = cefrLevel ? `CEFR ${cefrLevel}` : 'appropriate';
+  const prompt = `You are an expert English teacher. Create ${questionCount} listening comprehension questions for ${levelNote} learners based on the transcript below.
+
+Transcript title: ${title || 'Listening passage'}
+Transcript:
+"""${transcript.trim()}"""
+
+Rules:
+- Return ONLY a JSON array (no extra text, no markdown).
+- Each item must have: "question", "options" (4 options), and "correct" (must exactly match one of the options).
+- Keep questions and options appropriate for ${levelNote} level.
+
+Return format:
+[
+  {"question":"...","options":["A","B","C","D"],"correct":"A"},
+  ...
+]`;
+
+  const response = await callAIWithBackup(
+    prompt,
+    'Expert English teacher. Return only a JSON array of listening questions.',
+    1200
+  );
+  const parsed = parseAIResponse(response);
+  if (!Array.isArray(parsed)) {
+    throw new Error('AI did not return a valid question array');
+  }
+  const normalized: ListeningQuestion[] = parsed
+    .map((q: any, idx: number) => ({
+      id: `ai-q-${idx + 1}`,
+      question: String(q.question || '').trim(),
+      options: Array.isArray(q.options) ? q.options.map((o: any) => String(o).trim()) : [],
+      correct: String(q.correct || '').trim(),
+    }))
+    .filter(q => q.question && q.options.length >= 2 && q.correct);
+
+  if (normalized.length === 0) {
+    throw new Error('AI did not generate any valid listening questions');
+  }
+
+  return normalized.slice(0, questionCount);
 };
 
 /**
