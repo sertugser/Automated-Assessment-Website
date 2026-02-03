@@ -160,6 +160,7 @@ export function AdminPlatform({ onBack, user }: AdminPlatformProps) {
   };
 
   const filteredUsers = users.filter(u => {
+    if (u.role === 'admin') return false;
     const matchesSearch = 
       u.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
       u.email.toLowerCase().includes(searchTerm.toLowerCase());
@@ -331,7 +332,6 @@ export function AdminPlatform({ onBack, user }: AdminPlatformProps) {
                   <option value="all">All Roles</option>
                   <option value="student">Students</option>
                   <option value="instructor">Instructors</option>
-                  <option value="admin">Admins</option>
                 </select>
                 <button
                   onClick={() => { loadUsers(); loadStats(); toast.success('Data refreshed'); }}

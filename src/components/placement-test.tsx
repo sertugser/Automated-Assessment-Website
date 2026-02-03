@@ -410,16 +410,6 @@ export function PlacementTest({ user, onComplete, onBack, isRetake }: PlacementT
                         <span className="px-2 py-1 bg-indigo-100 text-indigo-700 rounded-full text-xs font-medium">
                           {q.topic}
                         </span>
-                        <span className={`px-2 py-1 rounded-full text-xs font-semibold ${
-                          q.cefrLevel === 'A1' ? 'bg-blue-100 text-blue-700' :
-                          q.cefrLevel === 'A2' ? 'bg-green-100 text-green-700' :
-                          q.cefrLevel === 'B1' ? 'bg-yellow-100 text-yellow-700' :
-                          q.cefrLevel === 'B2' ? 'bg-orange-100 text-orange-700' :
-                          q.cefrLevel === 'C1' ? 'bg-purple-100 text-purple-700' :
-                          'bg-red-100 text-red-700'
-                        }`}>
-                          {q.cefrLevel} (Ağırlık: {q.weight})
-                        </span>
                         {isCorrect ? (
                           <CheckCircle className="w-5 h-5 text-green-600" />
                         ) : (

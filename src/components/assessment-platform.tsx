@@ -91,6 +91,7 @@ export function AssessmentPlatform({ onBack, user }: AssessmentPlatformProps) {
   const [loadingCommonMistakes, setLoadingCommonMistakes] = useState(true);
   const [initialSpeakingActivityId, setInitialSpeakingActivityId] = useState<string | null>(null);
   const [initialSpeakingAssignmentId, setInitialSpeakingAssignmentId] = useState<string | null>(null);
+  const [initialListeningAssignmentId, setInitialListeningAssignmentId] = useState<string | null>(null);
   const [initialWritingActivityId, setInitialWritingActivityId] = useState<string | null>(null);
   const [initialWritingAssignmentId, setInitialWritingAssignmentId] = useState<string | null>(null);
   const [initialQuizActivityId, setInitialQuizActivityId] = useState<string | null>(null);
@@ -358,11 +359,15 @@ export function AssessmentPlatform({ onBack, user }: AssessmentPlatformProps) {
         try {
           const savedDifficulty = JSON.parse(hasCachedDifficulty);
           const savedMistakes = JSON.parse(hasCachedMistakes);
-          // If data is less than 24 hours old, skip reloading
-          if (savedDifficulty.timestamp && savedMistakes.timestamp && 
+          // If data is less than 24 hours old, use cache and skip API
+          if (savedDifficulty.timestamp && savedMistakes.timestamp &&
               Date.now() - savedDifficulty.timestamp < 24 * 60 * 60 * 1000 &&
               Date.now() - savedMistakes.timestamp < 24 * 60 * 60 * 1000) {
-            return; // Use cached data
+            setLearningDifficulty(savedDifficulty.data ?? null);
+            setCommonMistakes(Array.isArray(savedMistakes.data) ? savedMistakes.data : []);
+            setLoadingDifficulty(false);
+            setLoadingCommonMistakes(false);
+            return;
           }
         } catch (e) {
           // Continue to load fresh data
@@ -418,11 +423,13 @@ export function AssessmentPlatform({ onBack, user }: AssessmentPlatformProps) {
     }
   }, [currentScreen, currentUser?.cefrLevel, currentUser?.id, difficultyRefreshTrigger]);
 
-  // Notify dashboard to refresh when user completes speaking, writing, or listening (not just quiz)
+  // Notify dashboard to refresh when user completes speaking, writing, listening, or quiz
   const handleActivitySaved = useCallback(() => {
     if (currentUser?.id) {
       try {
         localStorage.removeItem(`assessai_recommendations_${currentUser.id}`);
+        localStorage.removeItem(`assessai_learning_difficulty_${currentUser.id}`);
+        localStorage.removeItem(`assessai_common_mistakes_${currentUser.id}`);
       } catch (_) { /* ignore */ }
     }
     setDifficultyRefreshTrigger(prev => prev + 1);
@@ -638,10 +645,15 @@ export function AssessmentPlatform({ onBack, user }: AssessmentPlatformProps) {
     const type = notif.assignmentType || assignment?.type;
     const courseId = notif.courseId || assignment?.courseId;
 
-    if (type === 'writing' || type === 'handwriting') {
+    if (type === 'writing') {
       setInitialWritingAssignmentId(notif.assignmentId);
       setInitialWritingActivityId(null);
       navigateToScreen('writing');
+      return;
+    }
+    if (type === 'listening') {
+      setInitialListeningAssignmentId(notif.assignmentId);
+      navigateToScreen('listening');
       return;
     }
     if (type === 'quiz' && courseId) {
@@ -973,6 +985,7 @@ export function AssessmentPlatform({ onBack, user }: AssessmentPlatformProps) {
           <ListeningSection
             cefrLevel={currentUser?.cefrLevel ?? null}
             onActivitySaved={handleActivitySaved}
+            assignmentId={initialListeningAssignmentId}
           />
         )}
         {currentScreen === 'writing' && (
@@ -1025,8 +1038,11 @@ export function AssessmentPlatform({ onBack, user }: AssessmentPlatformProps) {
                 setInitialSpeakingActivityId(null);
                 setInitialSpeakingAssignmentId(assignmentId);
                 navigateToScreen('speaking');
+              } else if (type === 'listening') {
+                setInitialListeningAssignmentId(assignmentId);
+                navigateToScreen('listening');
               } else {
-                navigateToScreen(type === 'writing' ? 'writing' : type === 'quiz' ? 'quiz' : 'speaking');
+                navigateToScreen('speaking');
               }
             }}
           />

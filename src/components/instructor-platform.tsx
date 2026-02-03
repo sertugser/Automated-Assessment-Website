@@ -41,7 +41,7 @@ const COURSE_OPTIONS = [
 const ASSIGNMENT_TYPES: { value: AssignmentType; label: string }[] = [
   { value: 'writing', label: 'Writing' },
   { value: 'speaking', label: 'Speaking' },
-  { value: 'handwriting', label: 'Handwriting' },
+  { value: 'listening', label: 'Listening' },
   { value: 'quiz', label: 'Quiz' },
 ];
 
@@ -115,6 +115,14 @@ export function InstructorPlatform({ onBack, user }: InstructorPlatformProps) {
   const classAnalytics = students.length > 0
     ? getClassAnalytics(students.map(s => s.studentId))
     : null;
+
+  const classAverageScore = (() => {
+    const scores = submissions
+      .map(s => s.instructorScore ?? s.aiScore ?? s.aiFeedback?.overallScore ?? 0)
+      .filter(score => score > 0);
+    if (scores.length === 0) return 0;
+    return Math.round(scores.reduce((sum, score) => sum + score, 0) / scores.length);
+  })();
 
   const handleCreateAssignment = (e: React.FormEvent) => {
     e.preventDefault();
@@ -223,6 +231,20 @@ export function InstructorPlatform({ onBack, user }: InstructorPlatformProps) {
   const rosterIds = getInstructorRoster(instructorId);
   const rosterStudents = allRegisteredStudents.filter(s => rosterIds.includes(s.id));
   const assignableStudents = rosterStudents.length > 0 ? rosterStudents : allRegisteredStudents;
+
+  const topPerformers = rosterStudents
+    .map(student => {
+      const studentSubs = submissions.filter(s => s.studentId === student.id);
+      const scores = studentSubs
+        .map(s => s.instructorScore ?? s.aiScore ?? s.aiFeedback?.overallScore ?? 0)
+        .filter(score => score > 0);
+      const averageScore = scores.length > 0
+        ? Math.round(scores.reduce((sum, score) => sum + score, 0) / scores.length)
+        : 0;
+      return { student, averageScore };
+    })
+    .sort((a, b) => b.averageScore - a.averageScore)
+    .slice(0, 3);
 
   const handleLogout = () => {
     if (window.confirm(t('instructor.logoutConfirm'))) onBack();
@@ -396,7 +418,7 @@ export function InstructorPlatform({ onBack, user }: InstructorPlatformProps) {
                     </div>
                     <Award className="w-4 h-4 opacity-60" />
                   </div>
-                  <div className="text-2xl font-bold mb-0.5">{Math.round(classAnalytics.averageOverallScore)}%</div>
+                  <div className="text-2xl font-bold mb-0.5">{classAverageScore}%</div>
                   <div className="text-green-100 text-xs">{t('instructor.avgScore')}</div>
                 </motion.div>
               ) : (
@@ -415,6 +437,72 @@ export function InstructorPlatform({ onBack, user }: InstructorPlatformProps) {
                   <div className="text-green-100 text-xs">{t('instructor.avgScore')}</div>
                 </motion.div>
               )}
+            </div>
+            <div className="space-y-6 mb-6">
+              <motion.div
+                initial={{ opacity: 0, y: 20 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ delay: 0.5 }}
+                className="bg-gradient-to-r from-indigo-500 via-purple-500 to-pink-500 rounded-2xl p-4 sm:p-5 shadow-xl"
+              >
+                <div className="flex items-center gap-2 text-white font-semibold mb-3">
+                  <Sparkles className="w-4 h-4" />
+                  <span>Quick Actions</span>
+                </div>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                  <button
+                    onClick={() => setShowCreateAssignment(true)}
+                    className="flex items-center justify-center gap-2 rounded-xl bg-white/20 text-white py-3 font-semibold hover:bg-white/30 transition-colors"
+                  >
+                    <Plus className="w-4 h-4" />
+                    Create Assignment
+                  </button>
+                  <button
+                    onClick={() => {
+                      setShowAddStudents(true);
+                      setRosterStudentIds([]);
+                    }}
+                    className="flex items-center justify-center gap-2 rounded-xl bg-white/20 text-white py-3 font-semibold hover:bg-white/30 transition-colors"
+                  >
+                    <Users className="w-4 h-4" />
+                    Add Students
+                  </button>
+                </div>
+              </motion.div>
+
+              <motion.div
+                initial={{ opacity: 0, y: 20 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ delay: 0.6 }}
+                className="bg-white rounded-2xl border border-gray-200 shadow-lg p-5"
+              >
+                <div className="flex items-center gap-2 text-sm font-semibold text-gray-900 mb-4">
+                  <Award className="w-4 h-4 text-indigo-600" />
+                  Top Performers
+                </div>
+                {topPerformers.length === 0 ? (
+                  <div className="text-sm text-gray-500 text-center py-6">No students yet</div>
+                ) : (
+                  <div className="space-y-3">
+                    {topPerformers.map(({ student, averageScore }) => (
+                      <div key={student.id} className="flex items-center justify-between">
+                        <div className="flex items-center gap-3">
+                          <div className="w-8 h-8 rounded-full bg-indigo-100 text-indigo-600 flex items-center justify-center text-xs font-semibold">
+                            {student.name.charAt(0).toUpperCase()}
+                          </div>
+                          <div>
+                            <p className="text-sm font-semibold text-gray-900">{student.name}</p>
+                            <p className="text-xs text-gray-500">{student.email}</p>
+                          </div>
+                        </div>
+                        <span className="text-xs font-semibold text-indigo-600">
+                          {averageScore > 0 ? `${averageScore}%` : '—'}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </motion.div>
             </div>
             {pendingSubmissions.length > 0 ? (
               <motion.div
@@ -691,7 +779,12 @@ export function InstructorPlatform({ onBack, user }: InstructorPlatformProps) {
                         {s.name.charAt(0).toUpperCase()}
                       </div>
                       <div>
-                        <p className="font-medium text-gray-900">{s.name}</p>
+                        <div className="flex items-center gap-2">
+                          <p className="font-medium text-gray-900">{s.name}</p>
+                          <span className="px-2 py-0.5 text-[10px] font-semibold rounded-full bg-purple-100 text-purple-700">
+                            {s.cefrLevel || '—'}
+                          </span>
+                        </div>
                         <p className="text-xs text-gray-500">{s.email}</p>
                       </div>
                     </div>

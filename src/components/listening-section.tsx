@@ -3,6 +3,9 @@ import { motion } from 'motion/react';
 import { Headphones, PlayCircle, PauseCircle, RotateCcw, CheckCircle2, BookOpen, Sparkles, ArrowLeft, List } from 'lucide-react';
 import { useLanguage } from '../contexts/LanguageContext';
 import { generateListeningQuestions } from '../lib/ai-services';
+import { createSubmission } from '../lib/assignments';
+import { getCurrentUser } from '../lib/auth';
+import { saveActivity } from '../lib/user-progress';
 import type { CEFRLevel } from '../lib/auth';
 
 type Level = CEFRLevel;
@@ -467,9 +470,10 @@ function getTimeInfo(sentences: string[], rate: number) {
 interface ListeningSectionProps {
   cefrLevel?: CEFRLevel | null;
   onActivitySaved?: () => void;
+  assignmentId?: string | null;
 }
 
-export function ListeningSection({ cefrLevel, onActivitySaved }: ListeningSectionProps) {
+export function ListeningSection({ cefrLevel, onActivitySaved, assignmentId }: ListeningSectionProps) {
   const { t } = useLanguage();
   const [isPlaying, setIsPlaying] = useState(false);
   const [selectedLevel, setSelectedLevel] = useState<Level>(cefrLevel && LEVEL_ORDER.includes(cefrLevel) ? cefrLevel : 'B1');
@@ -682,6 +686,40 @@ export function ListeningSection({ cefrLevel, onActivitySaved }: ListeningSectio
     const correctCount = questions.reduce((acc, q) => acc + (answers[q.id] === q.correct ? 1 : 0), 0);
     return { correctCount, total };
   }, [exercise, answers, questions]);
+
+  const handleCheckAnswers = () => {
+    if (submitted) return;
+    setSubmitted(true);
+    const percent = score.total > 0 ? Math.round((score.correctCount / score.total) * 100) : 0;
+
+    saveActivity({
+      type: 'listening',
+      score: percent,
+      courseTitle: exercise?.title || 'Listening Exercise',
+      listeningQuestions: questions.map((q) => ({
+        id: q.id,
+        question: q.question,
+        options: q.options,
+        correct: q.correct,
+      })),
+      listeningUserAnswers: answers,
+    });
+
+    if (assignmentId) {
+      const user = getCurrentUser();
+      if (user) {
+        createSubmission({
+          assignmentId,
+          studentId: user.id,
+          studentName: user.name,
+          status: 'completed',
+          content: exercise ? `Completed listening exercise: ${exercise.title}` : 'Completed listening exercise',
+          aiScore: percent,
+        });
+      }
+    }
+    onActivitySaved?.();
+  };
 
   const hasTTS = typeof window !== 'undefined' && 'speechSynthesis' in window;
 
@@ -917,10 +955,7 @@ export function ListeningSection({ cefrLevel, onActivitySaved }: ListeningSectio
               </button>
               <button
                 type="button"
-                onClick={() => {
-                  setSubmitted(true);
-                  onActivitySaved?.();
-                }}
+                onClick={handleCheckAnswers}
                 disabled={questions.some((q) => !answers[q.id])}
                 className="px-4 py-2.5 rounded-xl bg-gradient-to-r from-indigo-600 to-purple-600 text-white font-semibold hover:shadow-lg transition-all disabled:opacity-50 disabled:cursor-not-allowed"
               >

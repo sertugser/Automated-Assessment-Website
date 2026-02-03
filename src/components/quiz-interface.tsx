@@ -467,6 +467,7 @@ export function QuizInterface({ courseId, onComplete, onBack, questionCount: pro
                     ${isSelected ? 'border-indigo-600 bg-indigo-50' : 'border-gray-200 hover:border-indigo-300 bg-white'}
                   `}
                 >
+                  <span className="font-mono text-gray-500 mr-2">{String.fromCharCode(65 + index)}.</span>
                   <span className="font-medium text-gray-900">{option}</span>
                 </motion.button>
               );

@@ -25,7 +25,7 @@ function isTrueFalseQuestion(q: { options?: string[] }): boolean {
 
 export function ResultsScreen({ results, onRetry, onNewCourse, onBack }: ResultsScreenProps) {
   const { t } = useLanguage();
-  const { score, totalQuestions, correctAnswers, timeSpent, courseTitle, questions = [], userAnswers = [] } = results;
+  const { score, totalQuestions, correctAnswers, timeSpent, courseTitle, questions = [], userAnswers = [], readingPassage } = results;
   const [expandedReview, setExpandedReview] = useState(true);
   const [reviewFilter, setReviewFilter] = useState<ReviewFilter>('all');
   const [focusedQuestionIndex, setFocusedQuestionIndex] = useState<number | null>(null);
@@ -209,6 +209,15 @@ export function ResultsScreen({ results, onRetry, onNewCourse, onBack }: Results
             </button>
             {expandedReview && (
               <>
+                {readingPassage && readingPassage.trim() !== '' && (
+                  <div className="mb-6 rounded-xl border-2 border-indigo-200 bg-indigo-50/50 p-4">
+                    <h4 className="text-sm font-bold text-indigo-900 mb-2 flex items-center gap-2">
+                      <BookOpen className="w-4 h-4 text-indigo-600" />
+                      {t('results.readingPassage')}
+                    </h4>
+                    <p className="text-gray-800 leading-relaxed whitespace-pre-wrap text-sm">{readingPassage}</p>
+                  </div>
+                )}
                 <div className="flex flex-wrap gap-2 mb-4">
                   {(['all', 'wrong', 'correct', 'truefalse'] as const).map((filter) => (
                     <button

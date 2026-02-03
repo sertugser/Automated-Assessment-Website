@@ -2,10 +2,10 @@ import { motion } from 'motion/react';
 import { useState, useEffect } from 'react';
 import { 
   TrendingUp, Award, Target, Sparkles, ChevronRight,
-  BarChart3, Flame, Star, Trophy, BookOpen, Lightbulb, AlertCircle,
+  BarChart3, Flame, Star, Trophy, BookOpen, AlertCircle,
   Clock, Edit, Mic
 } from 'lucide-react';
-import { getUserStats, getRecentActivities } from '../lib/user-progress';
+import { getUserStats, getRecentActivities, getMistakeSummaryCounts } from '../lib/user-progress';
 import type { UserActivity } from '../lib/user-progress';
 import type { CEFRLevel } from '../lib/auth';
 import { useLanguage } from '../contexts/LanguageContext';
@@ -37,12 +37,26 @@ export function ModernDashboard({ userName = 'Student', cefrLevel, recommendatio
   const { t } = useLanguage();
   const [stats, setStats] = useState(getUserStats());
   const [recentActivities, setRecentActivities] = useState<UserActivity[]>(() => getRecentActivities(10));
+  const [mistakeSummary, setMistakeSummary] = useState(() => getMistakeSummaryCounts());
 
-  // Update stats and recent activities when component mounts or when activities change
+  // Fixed categories like reference: Wrong Answer, Grammar, Spelling, Pronunciation (ordered by count desc for ranking)
+  const frequentMistakeRows = (() => {
+    const raw = [
+      { key: 'wrong' as const, labelKey: 'dashboard.wrongAnswer', count: mistakeSummary.wrongAnswers },
+      { key: 'grammar' as const, labelKey: 'dashboard.grammar', count: mistakeSummary.grammar },
+      { key: 'vocabulary' as const, labelKey: 'dashboard.vocabulary', count: mistakeSummary.vocabulary },
+      { key: 'pronunciation' as const, labelKey: 'dashboard.pronunciation', count: mistakeSummary.pronunciation },
+    ];
+    const sorted = [...raw].sort((a, b) => b.count - a.count);
+    return sorted.map((r, rank) => ({ ...r, rank: rank + 1, label: t(r.labelKey) }));
+  })();
+
+  // Update stats, recent activities, and mistake summary when component mounts or when activities change
   useEffect(() => {
     const update = () => {
       setStats(getUserStats());
       setRecentActivities(getRecentActivities(10));
+      setMistakeSummary(getMistakeSummaryCounts());
     };
 
     update();
@@ -147,98 +161,76 @@ export function ModernDashboard({ userName = 'Student', cefrLevel, recommendatio
         </motion.div>
       </div>
 
-      {/* Detected topic & AI advice + Common mistakes (AI analyzed) */}
+      {/* Detected mistakes & AI advice */}
       <motion.div
         initial={{ opacity: 0, y: 20 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ delay: 0.5 }}
         className="mb-8 grid grid-cols-1 md:grid-cols-2 gap-4"
       >
-        {/* Detected topic & AI advice */}
-        <div className="min-w-0 flex flex-col">
-          <h2 className="text-base font-semibold text-gray-900 mb-3 flex items-center gap-2">
-            <Sparkles className="w-4 h-4 text-violet-500 shrink-0" />
-            {t('dashboard.learningDifficultyTitle')}
-          </h2>
-          {loadingDifficulty ? (
-            <div className="bg-gradient-to-br from-violet-50 to-purple-100 rounded-xl border border-violet-200 p-4 flex items-center gap-2 text-violet-700 text-sm shadow-lg h-full min-h-[140px]">
-              <div className="h-5 w-5 rounded-full border-2 border-violet-400 border-t-transparent animate-spin shrink-0" />
-              <span>{t('dashboard.loadingDifficulty')}</span>
-            </div>
-          ) : learningDifficulty ? (
-            <div className="bg-gradient-to-br from-violet-50 to-purple-100 rounded-xl border border-violet-200 shadow-lg overflow-hidden h-full min-h-[140px] flex flex-col">
-              <div className="p-4 space-y-3 flex-1 flex flex-col">
-                <div className="flex flex-col gap-0.5">
-                  <span className="text-xs font-semibold text-violet-600 uppercase tracking-wide flex items-center gap-1.5">
-                    <BookOpen className="w-3.5 h-3.5 shrink-0" />
-                    {t('dashboard.detectedTopicLabel')}
-                  </span>
-                  <span className="text-sm font-medium text-gray-900">
-                    {learningDifficulty.topic?.trim() ? learningDifficulty.topic : t('dashboard.noTopic')}
-                  </span>
-                </div>
-                <div className="flex flex-col gap-2 pt-3 border-t border-violet-200/60 flex-1 min-h-0">
-                  <span className="text-xs font-semibold text-violet-600 uppercase tracking-wide flex items-center gap-1.5">
-                    <Lightbulb className="w-3.5 h-3.5 shrink-0" />
-                    {t('dashboard.aiAdviceLabel')}
-                  </span>
-                  <div className="flex-1 overflow-y-auto pr-1">
-                    <div className="text-sm text-gray-700 leading-relaxed space-y-2">
-                      {learningDifficulty.advice.split(/\.(?=\s|$)/).filter(s => s.trim()).map((sentence, idx) => (
-                        <div key={idx} className="flex items-start gap-2">
-                          <span className="text-violet-500 mt-1.5 shrink-0">•</span>
-                          <span className="flex-1">{sentence.trim()}{sentence.trim() && !sentence.trim().endsWith('.') ? '.' : ''}</span>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                </div>
-              </div>
-            </div>
-          ) : (
-            <div className="bg-gradient-to-br from-violet-50 to-purple-100 rounded-xl border border-violet-200 p-4 text-center text-violet-600 text-sm shadow-lg h-full min-h-[140px] flex items-center justify-center">
-              {t('dashboard.noDifficultyData')}
-            </div>
-          )}
-        </div>
-
-        {/* Common mistakes – AI analyzed */}
-        <div className="min-w-0 flex flex-col">
+        {/* Common mistakes - AI analyzed */}
+        <div className="w-full max-w-3xl">
           <h2 className="text-base font-semibold text-gray-900 mb-3 flex items-center gap-2">
             <AlertCircle className="w-4 h-4 text-amber-500 shrink-0" />
             {t('dashboard.commonMistakes')}
           </h2>
           {loadingCommonMistakes ? (
-            <div className="bg-gradient-to-br from-amber-50 to-orange-100 rounded-xl border border-amber-200 p-4 flex items-center gap-2 text-amber-700 text-sm shadow-lg h-full min-h-[140px]">
-              <div className="h-5 w-5 rounded-full border-2 border-amber-400 border-t-transparent animate-spin shrink-0" />
+            <div className="bg-gradient-to-br from-red-50 to-rose-100 rounded-xl border border-red-200 p-4 flex items-center gap-2 text-red-700 text-sm shadow-lg h-full min-h-[140px]">
+              <div className="h-5 w-5 rounded-full border-2 border-red-400 border-t-transparent animate-spin shrink-0" />
               <span>{t('dashboard.loadingDifficulty')}</span>
             </div>
           ) : commonMistakes && commonMistakes.length > 0 ? (
-            <div className="bg-gradient-to-br from-amber-50 to-orange-100 rounded-xl border border-amber-200 shadow-lg overflow-hidden h-full min-h-[140px] flex flex-col">
+            <div className="bg-gradient-to-br from-red-50 to-rose-100 rounded-xl border border-red-200 shadow-lg overflow-hidden h-full min-h-[140px] flex flex-col">
               <div className="p-4 space-y-3 flex-1 overflow-y-auto">
                 {commonMistakes.slice(0, 6).map((mistake, i) => (
-                  <div key={`mistake-${i}`} className="border-b border-amber-200/60 last:border-b-0 pb-3 last:pb-0">
+                  <div key={`mistake-${i}`} className="border-b border-red-200/60 last:border-b-0 pb-3 last:pb-0">
                     <div className="flex items-start justify-between gap-2 mb-1">
                       <span className="font-semibold text-gray-900 text-sm">{mistake.category}</span>
-                      <span className="text-xs font-medium text-amber-700 bg-amber-100 px-2 py-0.5 rounded-full shrink-0">
-                        {mistake.count} {t('dashboard.mistakesSuffix')}
-                      </span>
                     </div>
                     <p className="text-xs text-gray-700 mb-1.5">{mistake.description}</p>
-                    {mistake.examples && mistake.examples.length > 0 && (
-                      <ul className="text-xs text-gray-600 space-y-0.5 mb-1.5 ml-3 list-disc">
-                        {mistake.examples.slice(0, 2).map((example, idx) => (
-                          <li key={idx}>{example}</li>
-                        ))}
-                      </ul>
-                    )}
-                    <p className="text-xs text-amber-800 font-medium italic">{mistake.suggestion}</p>
+                    <p className="text-xs text-red-800 font-medium italic">{mistake.suggestion}</p>
                   </div>
                 ))}
               </div>
             </div>
           ) : (
-            <div className="bg-gradient-to-br from-amber-50 to-orange-100 rounded-xl border border-amber-200 p-4 text-center text-amber-700 text-sm shadow-lg h-full min-h-[140px] flex items-center justify-center">
+            <div className="bg-gradient-to-br from-red-50 to-rose-100 rounded-xl border border-red-200 p-4 text-center text-red-700 text-sm shadow-lg h-full min-h-[140px] flex items-center justify-center">
+              {t('dashboard.noCommonMistakesData')}
+            </div>
+          )}
+        </div>
+
+        {/* Frequent mistakes – same layout as Recent Activity, pink */}
+        <div className="w-full max-w-3xl md:ml-auto md:justify-self-end h-full flex flex-col">
+          <h2 className="text-base font-semibold text-gray-900 mb-3 flex items-center gap-2">
+            <AlertCircle className="w-4 h-4 text-amber-500 shrink-0" />
+            {t('dashboard.frequentMistakes')}
+          </h2>
+          {loadingCommonMistakes ? (
+            <div className="bg-gradient-to-br from-pink-100 to-rose-200 rounded-xl border-2 border-pink-300 p-4 flex items-center gap-2 text-rose-800 text-sm shadow-lg h-full min-h-[140px]">
+              <div className="h-5 w-5 rounded-full border-2 border-pink-500 border-t-transparent animate-spin shrink-0" />
+              <span>{t('dashboard.loadingDifficulty')}</span>
+            </div>
+          ) : frequentMistakeRows.some(r => r.count > 0) ? (
+            <div className="bg-gradient-to-br from-pink-100 to-rose-200 rounded-xl border-2 border-pink-300 shadow-lg">
+              <ul className="divide-y divide-pink-300/80">
+                {frequentMistakeRows.map((row) => (
+                  <li key={row.key} className="flex items-center gap-4 px-4 py-3 text-left rounded-lg border-2 border-transparent">
+                    <div className="p-2 rounded-lg shrink-0 bg-pink-200/90 text-rose-900">
+                      <span className="text-sm font-bold tabular-nums">{row.rank}</span>
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm font-medium text-gray-900">{row.label}</p>
+                    </div>
+                    <span className="text-sm font-semibold shrink-0 text-rose-900">
+                      {row.count} {t('dashboard.timesSuffix')}
+                    </span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          ) : (
+            <div className="bg-gradient-to-br from-pink-100 to-rose-200 rounded-xl border-2 border-pink-300 p-6 text-center text-rose-800 text-sm shadow-lg h-full min-h-[140px] flex items-center justify-center">
               {t('dashboard.noCommonMistakesData')}
             </div>
           )}

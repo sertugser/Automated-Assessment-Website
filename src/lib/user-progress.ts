@@ -22,7 +22,7 @@ function getCurrentUserId(): string | null {
 export interface UserActivity {
   id: string;
   userId?: string;
-  type: 'quiz' | 'writing' | 'speaking';
+  type: 'quiz' | 'writing' | 'speaking' | 'listening';
   score: number;
   date: string; // ISO date string
   courseId?: string;
@@ -54,6 +54,14 @@ export interface UserActivity {
   quizUserAnswers?: (number | null)[]; // User's selected answers (index of option)
   quizReadingPassage?: string; // For reading comprehension quizzes
   quizFeedback?: any; // AI-generated feedback for the quiz
+  // Optional saved data for listening activities
+  listeningQuestions?: Array<{
+    id: string;
+    question: string;
+    options: string[];
+    correct: string;
+  }>;
+  listeningUserAnswers?: Record<string, string>;
 }
 
 export interface UserStats {
@@ -146,6 +154,9 @@ export const calculateTotalPoints = (activities: UserActivity[]): number => {
         break;
       case 'speaking':
         points = activity.score * 12;
+        break;
+      case 'listening':
+        points = activity.score * 10;
         break;
     }
     return total + points;
@@ -294,7 +305,7 @@ export const getRecentActivities = (limit: number = 5): UserActivity[] => {
 /**
  * Get activities by type
  */
-export const getActivitiesByType = (type: 'quiz' | 'writing' | 'speaking'): UserActivity[] => {
+export const getActivitiesByType = (type: 'quiz' | 'writing' | 'speaking' | 'listening'): UserActivity[] => {
   return getActivities().filter(a => a.type === type);
 };
 
@@ -559,6 +570,7 @@ export const getSkillsBreakdown = () => {
   const quizActivities = getActivitiesByType('quiz');
   const writingActivities = getActivitiesByType('writing');
   const speakingActivities = getActivitiesByType('speaking');
+  const listeningActivities = getActivitiesByType('listening');
   
   // Helper function to calculate average
   const calculateAvg = (acts: UserActivity[]) => 
@@ -588,13 +600,15 @@ export const getSkillsBreakdown = () => {
   });
   const readingScore = readingQuizzes.length > 0 ? calculateAvg(readingQuizzes) : 0;
   
-  // Listening: ONLY listening quizzes (no fallback)
+  // Listening: prefer listening activities; fallback to listening quizzes
   const listeningQuizzes = quizActivities.filter(a => {
     const courseId = (a.courseId || '').toLowerCase();
     const courseTitle = (a.courseTitle || '').toLowerCase();
     return courseId.includes('listening') || courseTitle.includes('listening');
   });
-  const listeningScore = listeningQuizzes.length > 0 ? calculateAvg(listeningQuizzes) : 0;
+  const listeningScore = listeningActivities.length > 0
+    ? calculateAvg(listeningActivities)
+    : (listeningQuizzes.length > 0 ? calculateAvg(listeningQuizzes) : 0);
   
   // Speaking: ONLY from speaking activities
   const speakingScore = speakingActivities.length > 0 ? calculateAvg(speakingActivities) : 0;
@@ -628,6 +642,7 @@ export const getActivityTypeDistribution = () => {
   }
   
   const quizActivities = activities.filter(a => a.type === 'quiz');
+  const listeningActivities = activities.filter(a => a.type === 'listening');
   
   // Separate listening quizzes from other quizzes
   const listeningQuizzes = quizActivities.filter(a => {
@@ -637,7 +652,7 @@ export const getActivityTypeDistribution = () => {
   });
   
   const quizCount = quizActivities.length - listeningQuizzes.length; // Other quizzes (excluding listening)
-  const listeningCount = listeningQuizzes.length;
+  const listeningCount = listeningActivities.length > 0 ? listeningActivities.length : listeningQuizzes.length;
   const writingCount = activities.filter(a => a.type === 'writing').length;
   const speakingCount = activities.filter(a => a.type === 'speaking').length;
   
@@ -801,10 +816,134 @@ export interface MistakeCountByTopic {
   mistakeCount: number;
 }
 
+export interface MistakeSummaryCounts {
+  grammar: number;
+  wrongAnswers: number;
+  vocabulary: number;
+  pronunciation: number;
+}
+
+/** Count mistakes from all stored activities (no date limit — full history). */
+export const getMistakeSummaryCounts = (): MistakeSummaryCounts => {
+  const quizActivities = getActivitiesByType('quiz');
+  const writingActivities = getActivitiesByType('writing');
+  const speakingActivities = getActivitiesByType('speaking');
+  const listeningActivities = getActivitiesByType('listening');
+
+  let grammar = 0;
+  let wrongAnswers = 0;
+  let vocabulary = 0;
+  let pronunciation = 0;
+
+  // Quiz: all wrong answers count; vocabulary when topic/course is vocabulary-related
+  for (const activity of quizActivities) {
+    const questions = activity.quizQuestions;
+    const userAnswers = activity.quizUserAnswers;
+    if (!questions || !userAnswers || questions.length === 0) continue;
+
+    for (let i = 0; i < questions.length; i++) {
+      const q = questions[i];
+      const userAns = i < userAnswers.length ? userAnswers[i] : null;
+      const correct = q.correctAnswer;
+      const isWrong = userAns !== correct;
+      if (!isWrong) continue;
+
+      wrongAnswers += 1;
+      const topic = `${q.topic || ''} ${activity.courseTitle || ''}`.toLowerCase();
+      if (topic.includes('vocabulary') || topic.includes('kelime') || topic.includes('word choice') || topic.includes('vocab')) {
+        vocabulary += 1;
+      }
+    }
+  }
+
+  // Listening: all wrong answers (full history)
+  for (const activity of listeningActivities as any[]) {
+    const questions = activity.listeningQuestions || [];
+    const userAnswers = activity.listeningUserAnswers || {};
+    for (const q of questions) {
+      const userAns = userAnswers[q.id];
+      if (!userAns || userAns !== q.correct) {
+        wrongAnswers += 1;
+      }
+    }
+  }
+
+  // Writing: grammar + vocabulary from detailed and simple feedback (full history)
+  for (const activity of writingActivities as any[]) {
+    const feedback = activity.writingDetailedFeedback;
+    const errors = feedback?.grammar?.errors || [];
+    for (const err of errors) {
+      grammar += 1;
+      const typeText = String(err?.type || '').toLowerCase();
+      const msgText = String(err?.message || '').toLowerCase();
+      if (typeText.includes('vocabulary') || typeText.includes('word choice') || typeText.includes('word form') || typeText.includes('wrong word') ||
+          msgText.includes('vocabulary') || msgText.includes('word choice') || msgText.includes('kelime') || msgText.includes('word form')) {
+        vocabulary += 1;
+      }
+    }
+    const vocabSuggestions = feedback?.vocabulary?.suggestions;
+    if (Array.isArray(vocabSuggestions)) {
+      vocabulary += vocabSuggestions.length;
+    }
+    const simple = activity.writingSimpleAnalysis;
+    const simpleErrors = simple?.errors || [];
+    for (const err of simpleErrors) {
+      const exp = String(err?.explanation || '').toLowerCase();
+      const orig = String(err?.original || '').toLowerCase();
+      const repl = String(err?.replacement || '').toLowerCase();
+      if (exp.includes('vocabulary') || exp.includes('word choice') || exp.includes('word form') || exp.includes('kelime') ||
+          orig.includes('[vocabulary]') || repl.includes('[vocabulary]')) {
+        vocabulary += 1;
+      }
+    }
+  }
+
+  // Speaking: pronunciation = word + expected + actual (phonetic). Grammar = type and/or message/suggestion/description (no phonetic fields).
+  const hasPronunciationShape = (e: any): boolean =>
+    e && typeof e === 'object' &&
+    (e.word != null && String(e.word).trim() !== '') &&
+    (e.expected != null && String(e.expected).trim() !== '') &&
+    (e.actual != null && String(e.actual).trim() !== '');
+  const hasGrammarShape = (e: any): boolean => {
+    if (!e || typeof e !== 'object') return false;
+    if (hasPronunciationShape(e)) return false;
+    const hasType = e.type != null && String(e.type).trim() !== '';
+    const hasMessage = e.message != null && String(e.message).trim() !== '';
+    const hasSuggestion = e.suggestion != null && String(e.suggestion).trim() !== '';
+    const hasDescription = e.description != null && String(e.description).trim() !== '';
+    return hasType || hasMessage || hasSuggestion || hasDescription;
+  };
+
+  for (const activity of speakingActivities as any[]) {
+    const feedback = activity.speakingFeedback;
+    const grammarErrors = Array.isArray(feedback?.grammar?.errors) ? feedback.grammar.errors : [];
+    const pronunciationErrors = Array.isArray(feedback?.pronunciation?.errors) ? feedback.pronunciation.errors : [];
+
+    for (const e of grammarErrors) {
+      if (hasPronunciationShape(e)) pronunciation += 1;
+      else if (hasGrammarShape(e)) grammar += 1;
+      else grammar += 1;
+    }
+    for (const e of pronunciationErrors) {
+      if (hasGrammarShape(e)) grammar += 1;
+      else if (hasPronunciationShape(e)) pronunciation += 1;
+      else grammar += 1;
+    }
+
+    const vocabSuggestions = feedback?.vocabulary?.suggestions;
+    if (Array.isArray(vocabSuggestions)) {
+      vocabulary += vocabSuggestions.length;
+    }
+  }
+
+  return { grammar, wrongAnswers, vocabulary, pronunciation };
+};
+
 export const getMistakeCountsByTopic = (): MistakeCountByTopic[] => {
   const quizActivities = getActivitiesByType('quiz');
   const writingActivities = getActivitiesByType('writing');
   const speakingActivities = getActivitiesByType('speaking');
+  const listeningActivities = getActivitiesByType('listening');
   const counts: Record<string, number> = {};
 
   for (const activity of quizActivities) {
@@ -843,8 +982,27 @@ export const getMistakeCountsByTopic = (): MistakeCountByTopic[] => {
       counts[topic] = (counts[topic] ?? 0) + 1;
     }
     const pronunciationErrors = feedback?.pronunciation?.errors || [];
-    for (const err of pronunciationErrors) {
-      const topic = `Pronunciation: ${err.word || 'Word'}`.trim();
+    if (pronunciationErrors.length > 0) {
+      const topic = 'Speaking Pronunciation';
+      counts[topic] = (counts[topic] ?? 0) + pronunciationErrors.length;
+    }
+    const fluencyScore = feedback?.fluency?.score;
+    if (typeof fluencyScore === 'number' && fluencyScore < 80) {
+      const topic = 'Speaking Fluency';
+      counts[topic] = (counts[topic] ?? 0) + 1;
+    }
+  }
+
+  // Listening mistakes (from listening questions)
+  for (const activity of listeningActivities as any[]) {
+    const questions = activity.listeningQuestions || [];
+    const userAnswers = activity.listeningUserAnswers || {};
+    if (questions.length === 0) continue;
+    for (const q of questions) {
+      const userAns = userAnswers[q.id];
+      const isWrong = !userAns || userAns !== q.correct;
+      if (!isWrong) continue;
+      const topic = `Listening: ${activity.courseTitle || 'Listening'}`.trim();
       counts[topic] = (counts[topic] ?? 0) + 1;
     }
   }
@@ -870,6 +1028,7 @@ export const getWrongAnswerDetails = (limit: number = 24): WrongAnswerDetail[] =
   const quizActivities = getActivitiesByType('quiz');
   const writingActivities = getActivitiesByType('writing');
   const speakingActivities = getActivitiesByType('speaking');
+  const listeningActivities = getActivitiesByType('listening');
   const out: WrongAnswerDetail[] = [];
   const desc = [...quizActivities].sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
 
@@ -941,6 +1100,26 @@ export const getWrongAnswerDetails = (limit: number = 24): WrongAnswerDetail[] =
         userAnswer: String(err.actual || '').slice(0, 200),
         correctAnswer: String(err.expected || '').slice(0, 200),
         explanation: `Expected "${err.expected || ''}", heard "${err.actual || ''}".`.slice(0, 400),
+        topic,
+      });
+    }
+  }
+
+  // Add listening errors as wrong-answer details
+  for (const activity of listeningActivities as any[]) {
+    if (out.length >= limit) break;
+    const questions = activity.listeningQuestions || [];
+    const userAnswers = activity.listeningUserAnswers || {};
+    for (const q of questions) {
+      if (out.length >= limit) break;
+      const userAns = userAnswers[q.id];
+      if (userAns && userAns === q.correct) continue;
+      const topic = `Listening: ${activity.courseTitle || 'Listening'}`.trim();
+      out.push({
+        question: (q.question || '').slice(0, 300),
+        userAnswer: String(userAns || '(skipped)').slice(0, 200),
+        correctAnswer: String(q.correct || '').slice(0, 200),
+        explanation: '',
         topic,
       });
     }

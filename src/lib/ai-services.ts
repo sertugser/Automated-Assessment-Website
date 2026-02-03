@@ -375,6 +375,139 @@ const parseAIResponse = (response: string): any => {
 };
 
 /**
+ * Try to repair truncated reading-comprehension JSON (e.g. AI hit token limit).
+ * Returns parsed { passage, questions } or null if repair failed.
+ */
+function tryParseReadingComprehensionRepair(raw: string): { passage: string; questions: any[] } | null {
+  let cleaned = raw.trim();
+  if (cleaned.startsWith('```json')) {
+    cleaned = cleaned.replace(/```json\n?/g, '').replace(/```\n?/g, '');
+  } else if (cleaned.startsWith('```')) {
+    cleaned = cleaned.replace(/```\n?/g, '');
+  }
+  const jsonMatch = cleaned.match(/\{[\s\S]*/);
+  if (!jsonMatch) return null;
+  cleaned = jsonMatch[0];
+
+  // If already valid, parse normally
+  try {
+    const data = JSON.parse(cleaned);
+    if (data?.passage && Array.isArray(data?.questions)) return { passage: data.passage, questions: data.questions };
+  } catch (_) {}
+
+  // Repair 1a: truncated inside last option string (e.g. "To experiment with)
+  const repairSuffixInOption = '", "Option B", "Option C", "Option D"], "correctAnswer": 0, "explanation": "Response was truncated.", "topic": "Reading Comprehension"}]}';
+  try {
+    const repaired = cleaned + repairSuffixInOption;
+    const data = JSON.parse(repaired);
+    if (data?.passage && Array.isArray(data?.questions) && data.questions.length > 0) {
+      return { passage: data.passage, questions: data.questions };
+    }
+  } catch (_) {}
+
+  // Repair 1b: truncated after last option (options array complete, question object not closed)
+  // e.g. ..."D to provide background information"
+  if (cleaned.endsWith('"')) {
+    const repairSuffixAfterOptions = '], "correctAnswer": 0, "explanation": "Response was truncated.", "topic": "Reading Comprehension"}]}';
+    try {
+      const repaired = cleaned + repairSuffixAfterOptions;
+      const data = JSON.parse(repaired);
+      if (data?.passage && Array.isArray(data?.questions) && data.questions.length > 0) {
+        return { passage: data.passage, questions: data.questions };
+      }
+    } catch (_) {}
+  }
+
+  // Repair 2: drop last incomplete question - find boundary "},\s*{"question"
+  const re = /"\s*},\s*\{\s*"question"\s*:/g;
+  let match;
+  let commaPos = -1;
+  while ((match = re.exec(cleaned)) !== null) {
+    const idx = match.index + match[0].indexOf('},');
+    commaPos = idx + 1;
+  }
+  if (commaPos !== -1) {
+    const truncated = cleaned.substring(0, commaPos - 1) + ']}';
+    try {
+      const data = JSON.parse(truncated);
+      if (data?.passage && Array.isArray(data?.questions) && data.questions.length > 0) {
+        return { passage: data.passage, questions: data.questions };
+      }
+    } catch (_) {}
+  }
+
+  return null;
+}
+
+/**
+ * Try to repair truncated quiz-questions JSON (root array of question objects).
+ * Returns parsed array or null if repair failed.
+ */
+function tryParseQuizQuestionsRepair(raw: string): any[] | null {
+  let cleaned = raw.trim();
+  if (cleaned.startsWith('```json')) {
+    cleaned = cleaned.replace(/```json\n?/g, '').replace(/```\n?/g, '');
+  } else if (cleaned.startsWith('```')) {
+    cleaned = cleaned.replace(/```\n?/g, '');
+  }
+  const arrayMatch = cleaned.match(/\[[\s\S]*/);
+  if (!arrayMatch) return null;
+  cleaned = arrayMatch[0];
+
+  try {
+    const arr = JSON.parse(cleaned);
+    if (Array.isArray(arr)) return arr;
+  } catch (_) {}
+
+  const suffix = '"correctAnswer": 0, "explanation": "Response was truncated.", "topic": "Grammar"}]';
+
+  if (cleaned.endsWith('",')) {
+    try {
+      const repaired = cleaned + '"Option D"], ' + suffix;
+      const arr = JSON.parse(repaired);
+      if (Array.isArray(arr) && arr.length > 0) return arr;
+    } catch (_) {}
+  }
+
+  if (cleaned.endsWith('"')) {
+    try {
+      const repaired = cleaned + '], ' + suffix;
+      const arr = JSON.parse(repaired);
+      if (Array.isArray(arr) && arr.length > 0) return arr;
+    } catch (_) {}
+  }
+
+  if (cleaned.endsWith('"]')) {
+    try {
+      const repaired = cleaned + ', ' + suffix;
+      const arr = JSON.parse(repaired);
+      if (Array.isArray(arr) && arr.length > 0) return arr;
+    } catch (_) {}
+  }
+
+  // Truncated inside explanation (or other string) in last question - e.g. ..."Option C, 'Hos
+  try {
+    const repaired = cleaned + '", "topic": "Vocabulary"}]';
+    const arr = JSON.parse(repaired);
+    if (Array.isArray(arr) && arr.length > 0) return arr;
+  } catch (_) {}
+
+  const re = /\}\s*,\s*\{\s*"question"\s*:/g;
+  let match;
+  let lastEnd = -1;
+  while ((match = re.exec(cleaned)) !== null) lastEnd = match.index;
+  if (lastEnd !== -1) {
+    try {
+      const truncated = cleaned.substring(0, lastEnd + 1) + '}]';
+      const arr = JSON.parse(truncated);
+      if (Array.isArray(arr) && arr.length > 0) return arr;
+    } catch (_) {}
+  }
+
+  return null;
+}
+
+/**
  * Analyze writing assignment using AI
  */
 export const analyzeWriting = async (text: string): Promise<AIFeedback> => {
@@ -815,6 +948,22 @@ const transcribeAudio = async (audioBlob: Blob): Promise<string> => {
 };
 
 /**
+ * Strip leading "A)", "B)", "C)", "D)" or "A.", "B." etc from option text
+ * so that options are always displayed in consistent A, B, C, D order by index.
+ */
+function normalizeOptionText(option: string): string {
+  if (typeof option !== 'string') return String(option).trim();
+  return option.replace(/^\s*[A-Da-d][.)]\s*/i, '').trim();
+}
+
+/**
+ * Normalize all options in an array (strip leading A) B) C) D) so display order is clean).
+ */
+function normalizeOptions(options: string[]): string[] {
+  return options.map((o) => normalizeOptionText(String(o).trim()));
+}
+
+/**
  * Shuffle options and update correct answer index to ensure balanced distribution
  * Works with any number of options (3 or 4)
  */
@@ -1073,14 +1222,20 @@ Return ONLY JSON (no markdown):
 }`;
 
   try {
-    const estimatedTokens = Math.min(questionCount * 220 + 600, 3500);
+    const estimatedTokens = Math.min(questionCount * 220 + 600, 4000);
     const response = await callAIWithBackup(
       prompt,
-      'Expert English teacher. Return JSON with passage and questions only. Write detailed explanations for each question.',
+      'Expert English teacher. Return JSON with passage and questions only. Keep explanations brief (1-2 sentences) so the response is not truncated.',
       estimatedTokens
     );
-    const data = parseAIResponse(response);
-    
+    let data: { passage?: string; questions?: any[] } | null = null;
+    try {
+      data = parseAIResponse(response);
+    } catch (parseErr) {
+      data = tryParseReadingComprehensionRepair(response);
+      if (!data) throw parseErr;
+    }
+
     // Check if passage is valid
     const aiPassage = data?.passage?.trim() || '';
     const aiQuestions = Array.isArray(data?.questions) ? data.questions : [];
@@ -1093,7 +1248,9 @@ Return ONLY JSON (no markdown):
     let processedQuestions = aiQuestions.map((q: any, index: number) => ({
       id: index + 1,
       question: q.question || `Question ${index + 1}`,
-      options: Array.isArray(q.options) && q.options.length === 4 ? q.options : ['Option A', 'Option B', 'Option C', 'Option D'],
+      options: Array.isArray(q.options) && q.options.length === 4
+        ? normalizeOptions(q.options.map((o: any) => String(o).trim()))
+        : ['Option A', 'Option B', 'Option C', 'Option D'],
       correctAnswer: typeof q.correctAnswer === 'number' && q.correctAnswer >= 0 && q.correctAnswer < 4 ? q.correctAnswer : 0,
       explanation: q.explanation || 'No explanation provided',
       topic: q.topic || topic || 'Reading Comprehension',
@@ -1550,15 +1707,20 @@ Return ONLY JSON array (no markdown):
 [{"question":"...","options":["A","B","C","D"],"correctAnswer":0,"explanation":"Detailed 2-4 sentence explanation: why correct is correct, why key wrong options are wrong, in simple language.","topic":"${topic}"}]`;
 
   try {
-    // More tokens for detailed explanations (2-4 sentences per question)
-    const estimatedTokens = Math.min(count * 200 + 300, 2500);
+    const estimatedTokens = Math.min(count * 200 + 400, 3200);
     const response = await callAIWithBackup(
-      prompt, 
-      'Expert English teacher. Return valid JSON arrays only. Write detailed, student-friendly explanations for each question.',
+      prompt,
+      'Expert English teacher. Return valid JSON array only. Keep explanations brief (1-2 sentences) so the response is not truncated.',
       estimatedTokens
     );
-    const questions = parseAIResponse(response);
-    
+    let questions: any[];
+    try {
+      questions = parseAIResponse(response);
+    } catch (parseErr) {
+      questions = tryParseQuizQuestionsRepair(response) ?? [];
+      if (questions.length === 0) throw parseErr;
+    }
+
     if (!Array.isArray(questions) || questions.length === 0) {
       throw new Error('AI did not return a valid array of questions');
     }
@@ -1566,7 +1728,9 @@ Return ONLY JSON array (no markdown):
     let processedQuestions = questions.map((q: any, index: number) => ({
       id: index + 1,
       question: q.question || `Question ${index + 1}`,
-      options: Array.isArray(q.options) && q.options.length === 4 ? q.options : ['Option A', 'Option B', 'Option C', 'Option D'],
+      options: Array.isArray(q.options) && q.options.length === 4
+        ? normalizeOptions(q.options.map((o: any) => String(o).trim()))
+        : ['Option A', 'Option B', 'Option C', 'Option D'],
       correctAnswer: typeof q.correctAnswer === 'number' && q.correctAnswer >= 0 && q.correctAnswer < 4 ? q.correctAnswer : 0,
       explanation: q.explanation || 'No explanation provided',
       topic: q.topic || topic,
@@ -2632,23 +2796,43 @@ export const generateQuizPerformanceAnalysis = async (results: {
   });
 
   const strongTopicsList = Array.from(correctTopics.entries()).filter(([, c]) => c >= 1).map(([t]) => t);
-  const weakTopicsList = Array.from(wrongTopics.entries()).map(([t, c]) => `${t} (${c} wrong)`);
+  const weakTopicsList = Array.from(wrongTopics.entries()).map(([t, c]) => ({ topic: t, count: c }));
+
   const fallback = (): QuizPerformanceAnalysis => {
-    const strongAreas = strongTopicsList.length > 0
-      ? `You answered correctly in these areas: ${strongTopicsList.join(', ')} — ${results.correctAnswers} out of ${results.totalQuestions} questions. That shows you have a base in these topics; keep building on it by practicing similar questions and reviewing any explanations you found helpful.`
-      : results.score >= 70
-        ? `You got ${results.correctAnswers} out of ${results.totalQuestions} correct. Focus on the weak areas listed below and use the Question Review section to see why each answer was right or wrong.`
-        : `You completed the quiz. Below we highlight which topics need more work. Use the Question Review section to read each explanation and understand why the correct answers are right — that will help you improve next time.`;
-    const areasForImprovement = weakTopicsList.length > 0
-      ? `Topics to review: ${weakTopicsList.join(', ')}. You had ${wrongDetails.length} wrong answer(s) in total. For each of these topics, go through the wrong questions in the Question Review below and read the explanations. Practice similar concepts (e.g. same grammar rule or reading skill) before retrying the quiz.`
-      : results.score < 90
-        ? 'Review advanced topics and practice more challenging questions to reach mastery level. Use the Question Review section to understand each correct answer.'
-        : '';
-    const recommendation = results.score >= 90
-      ? 'You did well on this set. Try an advanced course or a harder topic to keep challenging yourself and solidify your skills.'
-      : weakTopicsList.length > 0
-        ? `Retry this quiz after reviewing: ${weakTopicsList.slice(0, 3).join(', ')}. Use the Question Review section to study each wrong answer and its explanation. Practice makes perfect!`
-        : 'Review the material and the Question Review section below, then retry to improve your score.';
+    const total = results.totalQuestions;
+    const correct = results.correctAnswers;
+    const wrongCount = wrongDetails.length;
+
+    let strongAreas: string;
+    if (strongTopicsList.length > 0 && correct > 0) {
+      const topicText = strongTopicsList.length === 1 ? strongTopicsList[0] : strongTopicsList.join(', ');
+      strongAreas = `You got ${correct} out of ${total} correct. Your correct answers were in: ${topicText}. Notice what those questions had in common (e.g. vocabulary type, grammar structure, or reading skill) and try to apply the same reasoning in similar items. Building from what you already get right is more effective than only focusing on errors.`;
+    } else if (results.score >= 70) {
+      strongAreas = `Score: ${correct}/${total}. Your timing and the mix of correct answers show you can handle some of this material. Use the Question Review to see exactly which patterns you got right, so you can rely on them in the next attempt.`;
+    } else {
+      strongAreas = `You completed all ${total} questions. The breakdown below shows where you're strong and where to focus. Use the Question Review to read each explanation — understanding why the correct answer is right will help you improve faster than guessing again.`;
+    }
+
+    let areasForImprovement: string;
+    if (weakTopicsList.length > 0 && wrongCount > 0) {
+      const byTopic = weakTopicsList.map(({ topic, count }) => `${topic}: ${count} wrong`).join('; ');
+      areasForImprovement = `Wrong answers by topic: ${byTopic}. For each wrong item, read the explanation and ask: "Why is the correct option right, and why did my choice not fit?" Look for patterns (e.g. confusing similar words, missing context, or misreading the question). Target those patterns with a few similar practice items before retrying the full quiz.`;
+    } else if (results.score < 90) {
+      areasForImprovement = 'Review the questions you missed in the Question Review below. Pay attention to the reasoning in each explanation, not just the correct letter. Then try a few more questions on the same topic or a slightly harder set to consolidate.';
+    } else {
+      areasForImprovement = '';
+    }
+
+    let recommendation: string;
+    if (results.score >= 90) {
+      recommendation = 'You did well on this set. Consider an advanced or broader topic next, or the same topic with more questions, to keep reinforcing your skills.';
+    } else if (weakTopicsList.length > 0) {
+      const topWeak = weakTopicsList.slice(0, 2).map(({ topic }) => topic).join(' and ');
+      recommendation = `Next step: focus on ${topWeak}. Study the wrong answers in Question Review, then retry this quiz in a day or two to see how much you've retained. One short review session is often more useful than retrying immediately.`;
+    } else {
+      recommendation = 'Review the explanations in Question Review once, then retry when you feel ready.';
+    }
+
     return { strongAreas, areasForImprovement, recommendation };
   };
 
@@ -2663,7 +2847,7 @@ export const generateQuizPerformanceAnalysis = async (results: {
   const weakTopics = Array.from(wrongTopics.entries()).map(([t, c]) => `${t} (${c} wrong)`).join(', ') || 'None';
   const strongTopics = Array.from(correctTopics.entries()).filter(([, c]) => c >= 1).map(([t]) => t).join(', ') || 'N/A';
 
-  const prompt = `You are an expert English assessment analyst. Analyze this quiz result and provide a DETAILED, personalized performance analysis. Be specific—reference actual topics, question types, and patterns from the data. Do NOT give generic advice.
+  const prompt = `You are an expert English assessment analyst. Write a DETAILED, non-repetitive performance analysis. Each of the three sections must add NEW information—do NOT repeat the same topic list or the same advice in all three.
 
 QUIZ DATA:
 - Course: ${results.courseTitle}
@@ -2675,13 +2859,16 @@ QUIZ DATA:
 WRONG ANSWERS (use these to be specific):
 ${wrongSummary}
 
-IMPORTANT: Write 2-4 FULL SENTENCES for each field. Do NOT give one-line or very short answers. The student should read a real analysis.
+RULES:
+- strongAreas: Say what they did RIGHT and why it matters (e.g. which skill or pattern). Do NOT just list topic names again. 2-4 sentences.
+- areasForImprovement: Explain WHAT to work on and HOW (e.g. "confusing X with Y" or "inference from context"). Give one or two concrete next steps. Do NOT repeat the same sentence as strongAreas or recommendation. 2-4 sentences.
+- recommendation: One clear next action (e.g. "retry in 2 days" or "try the next level"). Do NOT copy the "use Question Review" line from the other sections. 2-3 sentences.
 
-Return ONLY a JSON object with this exact structure (no markdown, no code blocks):
+Return ONLY a JSON object (no markdown, no code blocks):
 {
-  "strongAreas": "2-4 sentences. Be SPECIFIC: which topics or question types did they get right? Mention pace/timing if relevant. Do not be generic.",
-  "areasForImprovement": "2-4 sentences. Be SPECIFIC: which topics or concepts did they miss? Reference the wrong answers and explanations. Give concrete next steps (e.g. 'Review prepositions in context' or 'Practice inference questions'). If they scored 100%, say they have mastered this set.",
-  "recommendation": "2-3 sentences. Personalized next step: retry same topic, try harder level, or move on. Reference their weak/strong topics."
+  "strongAreas": "...",
+  "areasForImprovement": "...",
+  "recommendation": "..."
 }`;
 
   try {
@@ -2879,13 +3066,13 @@ export const getCommonMistakesAnalysis = async (
   }
 
   if (!GROQ_API_KEY && !GEMINI_API_KEY) {
-    // Fallback: return simple categorized mistakes
+    // Fallback: return simple categorized mistakes with topic-specific suggestions
     return mistakeCounts.slice(0, 8).map(m => ({
       category: m.topic,
       description: `You made ${m.mistakeCount} mistake${m.mistakeCount === 1 ? '' : 's'} in this topic`,
       count: m.mistakeCount,
       examples: [],
-      suggestion: 'Review the explanations for questions you got wrong and practice more exercises on this topic.',
+      suggestion: getFallbackSuggestionForTopic(m.topic),
     }));
   }
 
@@ -2898,17 +3085,24 @@ export const getCommonMistakesAnalysis = async (
     ? `\n\nDETAILED WRONG ANSWERS:\n${wrongAnswerDetails.slice(0, 20).map((w, i) => `[${i + 1}] Topic: "${w.topic}" | Q: ${w.question.slice(0, 150)} | User chose: "${w.userAnswer}" | Correct: "${w.correctAnswer}" | Explanation: ${w.explanation.slice(0, 200)}`).join('\n')}`
     : '';
 
-  const prompt = `You are an expert English teacher. Analyze the student's mistakes and categorize them into meaningful groups.
+  const prompt = `You are an expert English teacher. Analyze the student's mistakes and give SPECIFIC, DIFFERENT advice for each category.
 
 ${mistakesContext}${wrongAnswersContext}
 
 TASK:
-Analyze the mistakes and group them into categories (e.g., "Prepositions", "Verb Tenses", "Articles", "Vocabulary", "Grammar Structure", etc.). For each category:
-1. "category": A clear category name (e.g., "Prepositions (at/in/on)", "Present Perfect vs Past Simple")
+Analyze the mistakes and group them into categories. For EACH category you MUST provide:
+1. "category": A clear category name (e.g., "Prepositions (at/in/on)", "Present Perfect vs Past Simple", "Speaking Pronunciation")
 2. "description": A brief description of what mistakes were made in this category
 3. "count": Total number of mistakes in this category
-4. "examples": Array of 2-3 specific examples showing the mistake pattern (e.g., ["Used 'at' instead of 'in' for months", "Confused 'on' with 'at' for specific dates"])
-5. "suggestion": One sentence of specific advice on how to improve in this category
+4. "examples": Array of 2-3 specific examples showing the mistake pattern (e.g., ["Used 'at' instead of 'in' for months"])
+5. "suggestion": ONE sentence of advice that is SPECIFIC to this category. CRITICAL: Every suggestion must be DIFFERENT and tailored to the category:
+   - For reading/academic topics: suggest skimming, key words, or vocabulary in context (e.g. "Focus on topic sentences and signal words to find main ideas quickly.")
+   - For conditionals/grammar: suggest the exact grammar point and practice type (e.g. "Practice mixed conditionals with real-life scenarios; pay attention to which time the if-clause refers to.")
+   - For vocabulary: suggest learning in chunks or context (e.g. "Learn collocations and common phrases instead of single words; use flashcards with example sentences.")
+   - For inversion: suggest specific structures (e.g. "Drill 'Never have I...', 'Only when...' and negative adverbials until they feel natural.")
+   - For writing grammar: suggest the skill (e.g. "Review verb forms for the tense you are using; check subject-verb agreement in long sentences.")
+   - For pronunciation: suggest listening and production (e.g. "Use minimal pairs and shadowing; record yourself and compare to native audio.")
+   Do NOT use the same generic phrase like "Review explanations and practice more" for every category. Each suggestion must clearly relate to that category only.
 
 Return ONLY a JSON array of objects (no markdown, no code blocks, no explanations):
 [
@@ -2916,7 +3110,7 @@ Return ONLY a JSON array of objects (no markdown, no code blocks, no explanation
   ...
 ]
 
-Focus on the TOP 6-8 most important categories. Be specific about grammar/vocabulary points.`;
+Focus on the TOP 6-8 most important categories. Every "suggestion" must be unique and specific to its category.`;
 
   try {
     const response = await callAIWithBackup(
@@ -2947,20 +3141,33 @@ Focus on the TOP 6-8 most important categories. Be specific about grammar/vocabu
       description: `You made ${m.mistakeCount} mistake${m.mistakeCount === 1 ? '' : 's'} in this topic`,
       count: m.mistakeCount,
       examples: [],
-      suggestion: 'Review the explanations for questions you got wrong and practice more exercises on this topic.',
+      suggestion: getFallbackSuggestionForTopic(m.topic),
     }));
   } catch (e) {
     console.error('getCommonMistakesAnalysis error:', e);
-    // Fallback on error
     return mistakeCounts.slice(0, 8).map(m => ({
       category: m.topic,
       description: `You made ${m.mistakeCount} mistake${m.mistakeCount === 1 ? '' : 's'} in this topic`,
       count: m.mistakeCount,
       examples: [],
-      suggestion: 'Review the explanations for questions you got wrong and practice more exercises on this topic.',
+      suggestion: getFallbackSuggestionForTopic(m.topic),
     }));
   }
 };
+
+/** Topic-specific fallback suggestions when AI is unavailable or returns invalid data */
+function getFallbackSuggestionForTopic(topic: string): string {
+  const t = topic.toLowerCase();
+  if (t.includes('academic') || t.includes('reading') || t.includes('scholarly')) return 'Focus on topic sentences and key words; practice skimming before answering comprehension questions.';
+  if (t.includes('conditional')) return 'Practice each conditional type with real examples; pay attention to the time (past/present/future) in the if-clause and result.';
+  if (t.includes('vocabulary') || t.includes('daily life')) return 'Learn words in phrases and collocations; use new vocabulary in short sentences daily.';
+  if (t.includes('inversion')) return 'Drill structures like "Never have I...", "Only when..."; practice with negative adverbials at the start of sentences.';
+  if (t.includes('writing grammar') || t.includes('verb')) return 'Check verb tense and subject-verb agreement in each sentence; read your answers aloud before submitting.';
+  if (t.includes('pronunciation')) return 'Use minimal pairs and shadowing; record yourself and compare to native speaker audio for problem sounds.';
+  if (t.includes('listening')) return 'Listen once for gist, then again for details; note linking and weak forms in natural speech.';
+  if (t.includes('speaking')) return 'Record yourself and compare to model answers; focus on one grammar or pronunciation point at a time.';
+  return 'Review the explanations for the questions you got wrong and do extra practice on this topic.';
+}
 
 /**
  * Get default recommendations (fallback)

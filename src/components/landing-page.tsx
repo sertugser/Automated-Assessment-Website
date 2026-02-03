@@ -1,7 +1,8 @@
 import { useEffect, useState } from 'react';
-import { CheckCircle, TrendingUp, Zap, Bot, ArrowRight, Star, X } from 'lucide-react';
+import { CheckCircle, TrendingUp, Zap, Bot, ArrowRight, Star, X, HelpCircle } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { AIRobot } from './ai-robot';
+import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from './ui/accordion';
 import logo from '../assets/fbaa49f59eaf54473f226d88f4a207918ca971f2.png';
 
 interface LandingPageProps {
@@ -10,7 +11,7 @@ interface LandingPageProps {
 
 export function LandingPage({ onGetStarted }: LandingPageProps) {
   const [showRobot, setShowRobot] = useState(false);
-  const [showModal, setShowModal] = useState<'how-it-works' | 'testimonials' | null>(null);
+  const [showModal, setShowModal] = useState<'how-it-works' | 'testimonials' | 'faq' | null>(null);
   
   useEffect(() => {
     const handleScroll = () => {
@@ -23,10 +24,37 @@ export function LandingPage({ onGetStarted }: LandingPageProps) {
     return () => window.removeEventListener('scroll', handleScroll);
   }, []);
 
-  const handleNavClick = (e: React.MouseEvent<HTMLAnchorElement>, section: 'how-it-works' | 'testimonials') => {
+  const handleNavClick = (e: React.MouseEvent<HTMLAnchorElement>, section: 'how-it-works' | 'testimonials' | 'faq') => {
     e.preventDefault();
     setShowModal(section);
   };
+
+  const faqItems = [
+    {
+      question: 'How does the AI feedback work?',
+      answer: 'Our AI analyzes your responses in real time for grammar, vocabulary, coherence, and pronunciation (for speaking). It then gives instant, actionable feedback and suggestions.'
+    },
+    {
+      question: 'Can I track my progress over time?',
+      answer: 'Yes. You get a progress dashboard with skill breakdowns, weekly trends, and personalized recommendations based on your performance.'
+    },
+    {
+      question: 'Is the platform suitable for all English levels?',
+      answer: 'Absolutely. We support beginner to advanced levels, and our adaptive learning adjusts question difficulty based on your results.'
+    },
+    {
+      question: 'What skills can I improve with AssessAI?',
+      answer: 'You can improve reading, listening, speaking, and writing with guided practice, tests, and AI coaching.'
+    },
+    {
+      question: 'Do you offer 24/7 AI tutor support?',
+      answer: 'Yes. The AI tutor is available anytime to explain concepts, provide examples, and help you practice.'
+    },
+    {
+      question: 'Can I use AssessAI on mobile devices?',
+      answer: 'Yes. The platform is fully responsive and works on phones, tablets, and desktops.'
+    }
+  ];
 
   return (
     <div className="min-h-screen bg-gradient-to-b from-indigo-50 to-white">
@@ -42,6 +70,7 @@ export function LandingPage({ onGetStarted }: LandingPageProps) {
               <a href="#features" className="text-gray-600 hover:text-gray-900 transition-colors">Features</a>
               <a href="#how-it-works" className="text-gray-600 hover:text-gray-900 transition-colors" onClick={(e) => handleNavClick(e, 'how-it-works')}>How It Works</a>
               <a href="#testimonials" className="text-gray-600 hover:text-gray-900 transition-colors" onClick={(e) => handleNavClick(e, 'testimonials')}>Testimonials</a>
+              <a href="#faq" className="text-gray-600 hover:text-gray-900 transition-colors" onClick={(e) => handleNavClick(e, 'faq')}>FAQ</a>
             </div>
             <button
               onClick={onGetStarted}
@@ -224,6 +253,17 @@ export function LandingPage({ onGetStarted }: LandingPageProps) {
         </div>
       </footer>
 
+      {/* Floating FAQ Button */}
+      <button
+        type="button"
+        onClick={() => setShowModal('faq')}
+        className="fixed bottom-6 right-6 z-[55] flex items-center gap-2 rounded-full bg-gray-900 text-white px-4 py-3 shadow-xl hover:shadow-2xl transition-all"
+        aria-label="Open FAQ"
+      >
+        <HelpCircle className="w-5 h-5" />
+        <span className="text-sm font-semibold">FAQ</span>
+      </button>
+
       {/* Modal for How It Works */}
       <AnimatePresence>
         {showModal === 'how-it-works' && (
@@ -346,6 +386,55 @@ export function LandingPage({ onGetStarted }: LandingPageProps) {
                     </div>
                   </div>
                 ))}
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* Modal for FAQ */}
+      <AnimatePresence>
+        {showModal === 'faq' && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-[60] p-4"
+            onClick={() => setShowModal(null)}
+          >
+            <motion.div
+              initial={{ scale: 0.9, y: 20 }}
+              animate={{ scale: 1, y: 0 }}
+              exit={{ scale: 0.9, y: 20 }}
+              className="bg-white p-8 rounded-2xl shadow-2xl max-w-4xl w-full max-h-[90vh] overflow-y-auto"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <div className="flex justify-between items-center mb-6">
+                <h2 className="text-3xl font-bold text-gray-900">Frequently Asked Questions</h2>
+                <button
+                  onClick={() => setShowModal(null)}
+                  className="text-gray-400 hover:text-gray-600 transition-colors p-2 hover:bg-gray-100 rounded-lg"
+                  aria-label="Close FAQ"
+                >
+                  <X className="w-6 h-6" />
+                </button>
+              </div>
+              <p className="text-lg text-gray-600 mb-6">
+                Quick answers to the most common questions about AssessAI.
+              </p>
+              <div className="rounded-2xl border border-gray-200 p-2">
+                <Accordion type="single" collapsible className="w-full">
+                  {faqItems.map((item, index) => (
+                    <AccordionItem key={item.question} value={`faq-${index}`} className="px-4">
+                      <AccordionTrigger className="text-gray-900 text-base">
+                        {item.question}
+                      </AccordionTrigger>
+                      <AccordionContent className="text-gray-600 text-base">
+                        {item.answer}
+                      </AccordionContent>
+                    </AccordionItem>
+                  ))}
+                </Accordion>
               </div>
             </motion.div>
           </motion.div>

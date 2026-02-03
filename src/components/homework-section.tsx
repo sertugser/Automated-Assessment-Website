@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { motion } from 'motion/react';
-import { FileText, Edit, Mic, ClipboardList, ChevronRight, Calendar } from 'lucide-react';
+import { FileText, Edit, Mic, Headphones, ChevronRight, Calendar } from 'lucide-react';
 import { getAssignmentsForStudent, getAssignment, getSubmissionsByStudent } from '../lib/assignments';
 import { getCurrentUser } from '../lib/auth';
 import { useLanguage } from '../contexts/LanguageContext';
@@ -8,7 +8,7 @@ import { useLanguage } from '../contexts/LanguageContext';
 const TYPE_ICONS: Record<string, typeof FileText> = {
   writing: FileText,
   speaking: Mic,
-  handwriting: ClipboardList,
+  listening: Headphones,
   quiz: Edit,
 };
 
