@@ -2,6 +2,7 @@
 // Stores and calculates real user statistics (per-user)
 
 import { getCurrentUser } from './auth';
+import { getSubmissionsByStudent, getAssignment } from './assignments';
 
 const STORAGE_PREFIX = 'user_progress_activities_';
 const STREAK_PREFIX = 'user_streak_data_';
@@ -21,7 +22,7 @@ function getCurrentUserId(): string | null {
 
 export interface UserActivity {
   id: string;
-  type: 'quiz' | 'writing' | 'speaking';
+  type: 'quiz' | 'writing' | 'speaking' | 'listening';
   score: number;
   date: string; // ISO date string
   courseId?: string;
@@ -100,6 +101,45 @@ export const getActivities = (): UserActivity[] => {
   }
 };
 
+const getListeningActivitiesFromSubmissions = (userId: string): UserActivity[] => {
+  const submissions = getSubmissionsByStudent(userId);
+  const completedSubmissions = submissions
+    .filter(sub => sub.status === 'completed' || sub.status === 'reviewed')
+    .sort((a, b) => new Date(b.submittedAt).getTime() - new Date(a.submittedAt).getTime());
+
+  const submissionsByAssignment = new Map<string, typeof completedSubmissions[0]>();
+  completedSubmissions.forEach(sub => {
+    if (!submissionsByAssignment.has(sub.assignmentId)) {
+      submissionsByAssignment.set(sub.assignmentId, sub);
+    }
+  });
+
+  return Array.from(submissionsByAssignment.values())
+    .map(sub => {
+      const assignment = getAssignment(sub.assignmentId);
+      const isListeningAssignment = assignment?.type === 'listening';
+      const isPracticeListening = sub.assignmentId.startsWith('listening-practice-');
+      if (!isListeningAssignment && !isPracticeListening) return null;
+
+      const titleFromContent = sub.content?.startsWith('Completed listening exercise:')
+        ? sub.content.replace('Completed listening exercise:', '').trim()
+        : undefined;
+
+      return {
+        id: sub.id,
+        type: 'listening' as const,
+        score: sub.instructorScore ?? sub.aiScore ?? 0,
+        date: sub.submittedAt,
+        courseId: assignment?.courseId,
+        // Prefer the actual listening exercise title (avoid showing instructor assignment title like "Listen")
+        courseTitle: titleFromContent ?? assignment?.title,
+        correctAnswers: sub.aiScore,
+        totalQuestions: 100,
+      };
+    })
+    .filter((activity): activity is UserActivity => activity !== null);
+};
+
 /**
  * Calculate user level based on total points
  * Level formula: sqrt(points / 50) + 1, rounded down
@@ -128,6 +168,9 @@ export const calculateTotalPoints = (activities: UserActivity[]): number => {
         break;
       case 'speaking':
         points = activity.score * 12;
+        break;
+      case 'listening':
+        points = activity.score * 10;
         break;
     }
     return total + points;
@@ -239,10 +282,19 @@ const getStreakData = (userId: string): { currentStreak: number; lastActivityDat
 export const getUserStats = (userId?: string): UserStats => {
   const activities = getActivities();
   
+  // Get submissions and convert them to activities
+  const currentUser = getCurrentUser();
+  const userIdToUse = userId || currentUser?.id;
+  
+  const listeningActivities = userIdToUse ? getListeningActivitiesFromSubmissions(userIdToUse) : [];
+  
+  // Merge activities and submissions
+  const allActivities = [...activities, ...listeningActivities];
+  
   // Filter by userId if provided (for future multi-user support)
   const userActivities = userId 
-    ? activities.filter(a => (a as any).userId === userId)
-    : activities;
+    ? allActivities.filter(a => (a as any).userId === userId)
+    : allActivities;
   
   const totalPoints = calculateTotalPoints(userActivities);
   const level = calculateLevel(totalPoints);
@@ -268,7 +320,14 @@ export const getUserStats = (userId?: string): UserStats => {
  */
 export const getRecentActivities = (limit: number = 5): UserActivity[] => {
   const activities = getActivities();
-  return [...activities]
+  
+  // Get submissions and convert them to activities
+  const currentUser = getCurrentUser();
+  const listeningActivities = currentUser ? getListeningActivitiesFromSubmissions(currentUser.id) : [];
+  
+  // Merge and sort
+  const allActivities = [...activities, ...listeningActivities];
+  return [...allActivities]
     .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())
     .slice(0, limit);
 };
@@ -276,8 +335,16 @@ export const getRecentActivities = (limit: number = 5): UserActivity[] => {
 /**
  * Get activities by type
  */
-export const getActivitiesByType = (type: 'quiz' | 'writing' | 'speaking'): UserActivity[] => {
-  return getActivities().filter(a => a.type === type);
+export const getActivitiesByType = (type: 'quiz' | 'writing' | 'speaking' | 'listening'): UserActivity[] => {
+  const activities = getActivities();
+  
+  // Get submissions for listening type
+  if (type === 'listening') {
+    const currentUser = getCurrentUser();
+    return currentUser ? getListeningActivitiesFromSubmissions(currentUser.id) : [];
+  }
+  
+  return activities.filter(a => a.type === type);
 };
 
 /**
@@ -353,6 +420,30 @@ export const getQuizStats = () => {
 };
 
 /**
+ * Get listening statistics
+ */
+export const getListeningStats = () => {
+  const listeningActivities = getActivitiesByType('listening');
+  const totalExercises = listeningActivities.length;
+  const avgScore = totalExercises > 0
+    ? Math.round(listeningActivities.reduce((sum, a) => sum + a.score, 0) / totalExercises)
+    : 0;
+  
+  const bestScore = listeningActivities.length > 0
+    ? Math.max(...listeningActivities.map(a => a.score))
+    : 0;
+  
+  const perfectScores = listeningActivities.filter(a => a.score === 100).length;
+  
+  return {
+    totalExercises,
+    avgScore,
+    bestScore,
+    perfectScores,
+  };
+};
+
+/**
  * Get quiz statistics by course
  */
 export const getQuizStatsByCourse = () => {
@@ -407,6 +498,14 @@ export const getRecentQuizzes = (limit: number = 5) => {
  */
 export const getWeeklyProgressData = () => {
   const activities = getActivities();
+  
+  // Get listening submissions
+  const currentUser = getCurrentUser();
+  const listeningActivities = currentUser ? getListeningActivitiesFromSubmissions(currentUser.id) : [];
+  
+  // Merge activities with listening submissions
+  const allActivities = [...activities, ...listeningActivities];
+  
   const today = new Date();
   today.setHours(0, 0, 0, 0);
   
@@ -417,7 +516,7 @@ export const getWeeklyProgressData = () => {
     date.setDate(date.getDate() - i);
     date.setHours(0, 0, 0, 0);
     
-    const dayActivities = activities.filter(a => {
+    const dayActivities = allActivities.filter(a => {
       const activityDate = new Date(a.date);
       activityDate.setHours(0, 0, 0, 0);
       return activityDate.getTime() === date.getTime();
@@ -450,6 +549,14 @@ export const getWeeklyProgressData = () => {
  */
 export const getMonthlyData = () => {
   const activities = getActivities();
+  
+  // Get listening submissions
+  const currentUser = getCurrentUser();
+  const listeningActivities = currentUser ? getListeningActivitiesFromSubmissions(currentUser.id) : [];
+  
+  // Merge activities with listening submissions
+  const allActivities = [...activities, ...listeningActivities];
+  
   const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
   const today = new Date();
   const currentMonth = today.getMonth();
@@ -462,7 +569,7 @@ export const getMonthlyData = () => {
     const monthIndex = date.getMonth();
     const year = date.getFullYear();
     
-    const monthActivities = activities.filter(a => {
+    const monthActivities = allActivities.filter(a => {
       const activityDate = new Date(a.date);
       return activityDate.getMonth() === monthIndex && activityDate.getFullYear() === year;
     });
@@ -541,6 +648,7 @@ export const getSkillsBreakdown = () => {
   const quizActivities = getActivitiesByType('quiz');
   const writingActivities = getActivitiesByType('writing');
   const speakingActivities = getActivitiesByType('speaking');
+  const listeningActivities = getActivitiesByType('listening'); // Get listening submissions
   
   // Helper function to calculate average
   const calculateAvg = (acts: UserActivity[]) => 
@@ -570,13 +678,8 @@ export const getSkillsBreakdown = () => {
   });
   const readingScore = readingQuizzes.length > 0 ? calculateAvg(readingQuizzes) : 0;
   
-  // Listening: ONLY listening quizzes (no fallback)
-  const listeningQuizzes = quizActivities.filter(a => {
-    const courseId = (a.courseId || '').toLowerCase();
-    const courseTitle = (a.courseTitle || '').toLowerCase();
-    return courseId.includes('listening') || courseTitle.includes('listening');
-  });
-  const listeningScore = listeningQuizzes.length > 0 ? calculateAvg(listeningQuizzes) : 0;
+  // Listening: From listening submissions
+  const listeningScore = listeningActivities.length > 0 ? calculateAvg(listeningActivities) : 0;
   
   // Speaking: ONLY from speaking activities
   const speakingScore = speakingActivities.length > 0 ? calculateAvg(speakingActivities) : 0;
@@ -600,7 +703,14 @@ export const getSkillsBreakdown = () => {
 export const getActivityTypeDistribution = () => {
   const activities = getActivities();
   
-  if (activities.length === 0) {
+  // Get listening submissions
+  const currentUser = getCurrentUser();
+  const listeningActivities = currentUser ? getListeningActivitiesFromSubmissions(currentUser.id) : [];
+  
+  // Merge activities with listening submissions
+  const allActivities = [...activities, ...listeningActivities];
+  
+  if (allActivities.length === 0) {
     return [
       { name: 'Quiz', value: 0, color: '#3b82f6' },
       { name: 'Writing', value: 0, color: '#6366f1' },
@@ -609,21 +719,12 @@ export const getActivityTypeDistribution = () => {
     ];
   }
   
-  const quizActivities = activities.filter(a => a.type === 'quiz');
+  const quizCount = allActivities.filter(a => a.type === 'quiz').length;
+  const writingCount = allActivities.filter(a => a.type === 'writing').length;
+  const speakingCount = allActivities.filter(a => a.type === 'speaking').length;
+  const listeningCount = listeningActivities.length;
   
-  // Separate listening quizzes from other quizzes
-  const listeningQuizzes = quizActivities.filter(a => {
-    const courseId = (a.courseId || '').toLowerCase();
-    const courseTitle = (a.courseTitle || '').toLowerCase();
-    return courseId.includes('listening') || courseTitle.includes('listening');
-  });
-  
-  const quizCount = quizActivities.length - listeningQuizzes.length; // Other quizzes (excluding listening)
-  const listeningCount = listeningQuizzes.length;
-  const writingCount = activities.filter(a => a.type === 'writing').length;
-  const speakingCount = activities.filter(a => a.type === 'speaking').length;
-  
-  const total = activities.length;
+  const total = allActivities.length;
   
   return [
     { 

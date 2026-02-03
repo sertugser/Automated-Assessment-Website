@@ -3,6 +3,8 @@ import { motion } from 'motion/react';
 import { Headphones, PlayCircle, PauseCircle, RotateCcw, CheckCircle2, BookOpen, Sparkles, ArrowLeft, List } from 'lucide-react';
 import { useLanguage } from '../contexts/LanguageContext';
 import type { CEFRLevel } from '../lib/auth';
+import { getCurrentUser } from '../lib/auth';
+import { createSubmission } from '../lib/assignments';
 
 type Level = CEFRLevel;
 
@@ -465,9 +467,10 @@ function getTimeInfo(sentences: string[], rate: number) {
 
 interface ListeningSectionProps {
   cefrLevel?: CEFRLevel | null;
+  assignmentId?: string;
 }
 
-export function ListeningSection({ cefrLevel }: ListeningSectionProps) {
+export function ListeningSection({ cefrLevel, assignmentId }: ListeningSectionProps) {
   const { t } = useLanguage();
   const [isPlaying, setIsPlaying] = useState(false);
   const [selectedLevel, setSelectedLevel] = useState<Level>(cefrLevel && LEVEL_ORDER.includes(cefrLevel) ? cefrLevel : 'B1');
@@ -879,7 +882,31 @@ export function ListeningSection({ cefrLevel }: ListeningSectionProps) {
               </button>
               <button
                 type="button"
-                onClick={() => setSubmitted(true)}
+                onClick={() => {
+                  if (submitted) return; // Prevent duplicate submissions
+                  setSubmitted(true);
+                  // Calculate score
+                  const correct = Object.entries(answers).filter(([qId, ans]) => {
+                    const question = exercise?.questions.find(q => q.id === qId);
+                    return question && ans === question.correct;
+                  }).length;
+                  const total = exercise?.questions.length ?? 10;
+                  const score = Math.round((correct / total) * 100);
+                  
+                  // Save submission
+                  const user = getCurrentUser();
+                  if (user && exercise) {
+                    const submissionAssignmentId = assignmentId || `listening-practice-${exercise.id}`;
+                    createSubmission({
+                      studentId: user.id,
+                      studentName: user.name || user.email || 'Student',
+                      assignmentId: submissionAssignmentId,
+                      content: `Completed listening exercise: ${exercise.title}`,
+                      status: 'completed',
+                      aiScore: score,
+                    });
+                  }
+                }}
                 disabled={exercise.questions.some((q) => !answers[q.id])}
                 className="px-4 py-2.5 rounded-xl bg-gradient-to-r from-indigo-600 to-purple-600 text-white font-semibold hover:shadow-lg transition-all disabled:opacity-50 disabled:cursor-not-allowed"
               >

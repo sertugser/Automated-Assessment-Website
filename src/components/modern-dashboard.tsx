@@ -3,7 +3,7 @@ import { useState, useEffect } from 'react';
 import { 
   TrendingUp, Award, Target, Sparkles, ChevronRight,
   BarChart3, Flame, Star, Trophy, BookOpen, Lightbulb, AlertCircle,
-  Clock, Edit, Mic
+  Clock, Edit, Mic, Headphones
 } from 'lucide-react';
 import { getUserStats, getRecentActivities } from '../lib/user-progress';
 import type { UserActivity } from '../lib/user-progress';
@@ -25,7 +25,7 @@ interface ModernDashboardProps {
   userName?: string;
   cefrLevel?: CEFRLevel | null;
   recommendations?: Recommendation[];
-  onOpenActivity?: (activityId: string, type: 'speaking' | 'writing' | 'quiz') => void;
+  onOpenActivity?: (activityId: string, type: 'speaking' | 'writing' | 'quiz' | 'listening') => void;
   onRetakeTest?: () => void;
   learningDifficulty?: LearningDifficultyAnalysis | null;
   loadingDifficulty?: boolean;
@@ -264,15 +264,15 @@ export function ModernDashboard({ userName = 'Student', cefrLevel, recommendatio
           <div className="bg-gradient-to-br from-indigo-50 to-blue-100 rounded-xl border border-indigo-200 shadow-lg">
             <ul className="divide-y divide-indigo-200/60">
               {recentActivities.map((a) => {
-                const Icon = a.type === 'quiz' ? BookOpen : a.type === 'writing' ? Edit : Mic;
-                const title = a.courseTitle || (a.type === 'quiz' ? 'Quiz' : a.type === 'writing' ? 'Writing' : 'Speaking');
+                const Icon = a.type === 'quiz' ? BookOpen : a.type === 'writing' ? Edit : a.type === 'listening' ? Headphones : Mic;
+                const title = a.courseTitle || (a.type === 'quiz' ? 'Quiz' : a.type === 'writing' ? 'Writing' : a.type === 'listening' ? 'Listening' : 'Speaking');
                 const dateStr = formatActivityDate(a.date, t);
-                const isClickable = !!onOpenActivity && (a.type === 'quiz' || a.type === 'writing' || a.type === 'speaking');
+                const isClickable = !!onOpenActivity && (a.type === 'quiz' || a.type === 'writing' || a.type === 'speaking' || a.type === 'listening');
                 return (
                   <li key={a.id} className="group">
                     <button
                       type="button"
-                      onClick={() => isClickable && onOpenActivity(a.id, a.type as 'quiz' | 'writing' | 'speaking')}
+                      onClick={() => isClickable && onOpenActivity(a.id, a.type as 'quiz' | 'writing' | 'speaking' | 'listening')}
                       className={`w-full flex items-center gap-4 px-4 py-3 text-left transition-all duration-200 rounded-lg border-2 border-transparent ${isClickable ? 'hover:bg-indigo-100 hover:shadow-md cursor-pointer hover:border-indigo-600' : 'cursor-default'}`}
                       style={{ boxSizing: 'border-box' }}
                     >

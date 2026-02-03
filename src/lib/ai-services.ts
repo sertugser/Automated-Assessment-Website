@@ -254,15 +254,17 @@ const callAIWithBackup = async (prompt: string, systemPrompt: string, maxTokens?
       
       // Check if it's an invalid API key error
       if (error?.isInvalidApiKey || errorMsg.includes('Invalid API Key') || errorMsg.includes('invalid_api_key')) {
-        console.error('Groq API key is invalid. Please check your VITE_GROQ_API_KEY in .env file.');
-        // Don't try Gemini if Groq key is invalid - user needs to fix the key
-        throw new Error(
-          `Invalid Groq API Key. Please check your VITE_GROQ_API_KEY in .env file.\n` +
-          `1. Get your API key from https://console.groq.com\n` +
-          `2. Add it to .env file as: VITE_GROQ_API_KEY=gsk_your_key_here\n` +
-          `3. Restart the dev server (npm run dev)\n\n` +
-          `If you don't have a Groq API key, you can use Gemini instead by setting VITE_GEMINI_API_KEY in .env`
-        );
+        console.error('Groq API key is invalid or expired. Falling back to Gemini...');
+        // Try Gemini as fallback if Groq key is invalid/expired
+        if (!GEMINI_API_KEY) {
+          throw new Error(
+            `Invalid Groq API Key and no Gemini backup configured.\n` +
+            `Option 1: Fix Groq key - Get it from https://console.groq.com and update .env\n` +
+            `Option 2: Use Gemini - Get key from https://aistudio.google.com/app/apikey and add VITE_GEMINI_API_KEY to .env\n` +
+            `Then restart dev server (npm run dev)`
+          );
+        }
+        // Continue to Gemini fallback below
       }
       
       // Check if it's a rate limit error

@@ -18,6 +18,7 @@ import { ProfilePage } from './profile-page';
 import { DictionarySection } from './dictionary-section';
 import { HomeworkSection } from './homework-section';
 import { type User as UserType, updateUser, getCurrentUser } from '../lib/auth';
+import { createSubmission } from '../lib/assignments';
 import { getUserStats, getRecentActivities, saveActivity, analyzeUserWeaknesses, getMistakeCountsByTopic, getWrongAnswerDetails, getActivitiesByType, getActivities, type UserActivity } from '../lib/user-progress';
 import { generatePersonalizedRecommendations, getLearningDifficultyAnalysis, getCommonMistakesAnalysis, type LearningDifficultyAnalysis, type CommonMistakeAnalysis } from '../lib/ai-services';
 import { useLanguage } from '../contexts/LanguageContext';
@@ -90,6 +91,7 @@ export function AssessmentPlatform({ onBack, user }: AssessmentPlatformProps) {
   const [initialSpeakingActivityId, setInitialSpeakingActivityId] = useState<string | null>(null);
   const [initialWritingActivityId, setInitialWritingActivityId] = useState<string | null>(null);
   const [initialWritingAssignmentId, setInitialWritingAssignmentId] = useState<string | null>(null);
+  const [initialListeningAssignmentId, setInitialListeningAssignmentId] = useState<string | null>(null);
   const [initialQuizActivityId, setInitialQuizActivityId] = useState<string | null>(null);
   const [initialQuizAssignmentId, setInitialQuizAssignmentId] = useState<string | null>(null);
   const [resultsFromHistory, setResultsFromHistory] = useState(false);
@@ -493,6 +495,26 @@ export function AssessmentPlatform({ onBack, user }: AssessmentPlatformProps) {
       console.warn('Quiz complete: save/recommendations failed', e);
     }
 
+    if (currentUser) {
+      try {
+        // Use homework assignment ID if available, otherwise generate one from course
+        const submissionAssignmentId = initialQuizAssignmentId || `quiz-${selectedCourse}`;
+        const quizTitle = results.courseTitle || selectedCourse.split('-').map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' ');
+        createSubmission({
+          studentId: currentUser.id,
+          studentName: currentUser.name || currentUser.email || 'Student',
+          assignmentId: submissionAssignmentId,
+          content: `Completed quiz: ${quizTitle}`,
+          status: 'completed',
+          aiScore: results.score,
+        });
+      } catch (e) {
+        console.warn('Quiz complete: submission failed', e);
+      } finally {
+        setInitialQuizAssignmentId(null);
+      }
+    }
+
     navigateToScreen('results');
   };
 
@@ -791,7 +813,7 @@ export function AssessmentPlatform({ onBack, user }: AssessmentPlatformProps) {
           <SpeakingSection initialActivityId={initialSpeakingActivityId} />
         )}
         {currentScreen === 'listening' && (
-          <ListeningSection cefrLevel={currentUser?.cefrLevel ?? null} />
+          <ListeningSection cefrLevel={currentUser?.cefrLevel ?? null} assignmentId={initialListeningAssignmentId ?? undefined} />
         )}
         {currentScreen === 'writing' && (
           <WritingSection
@@ -841,8 +863,11 @@ export function AssessmentPlatform({ onBack, user }: AssessmentPlatformProps) {
               } else if (type === 'speaking') {
                 setInitialSpeakingActivityId(null);
                 navigateToScreen('speaking');
+              } else if (type === 'listening') {
+                setInitialListeningAssignmentId(assignmentId);
+                navigateToScreen('listening');
               } else {
-                navigateToScreen(type === 'writing' ? 'writing' : type === 'quiz' ? 'quiz' : 'speaking');
+                navigateToScreen(type === 'writing' ? 'writing' : type === 'quiz' ? 'quiz' : type === 'listening' ? 'listening' : 'speaking');
               }
             }}
           />

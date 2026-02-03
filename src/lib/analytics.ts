@@ -34,7 +34,7 @@ export interface TimeSeriesData {
  */
 export const calculateStudentMetrics = (studentId: string): PerformanceMetrics => {
   const submissions = getSubmissionsByStudent(studentId);
-  const completedSubmissions = submissions.filter(s => s.status === 'completed');
+  const completedSubmissions = submissions.filter(s => s.status === 'completed' || s.status === 'reviewed');
 
   if (completedSubmissions.length === 0) {
     return {
@@ -50,6 +50,11 @@ export const calculateStudentMetrics = (studentId: string): PerformanceMetrics =
   }
 
   const scores = completedSubmissions.map(s => s.aiFeedback);
+  
+  // Prefer instructor score when reviewed, otherwise fallback to AI scores
+  const allOverallScores = completedSubmissions
+    .map(s => s.instructorScore ?? s.aiFeedback?.overallScore ?? s.aiScore ?? 0)
+    .filter(score => score > 0);
   
   const grammarScores = scores
     .filter(s => s?.grammar)
@@ -71,9 +76,7 @@ export const calculateStudentMetrics = (studentId: string): PerformanceMetrics =
     .filter(s => s?.fluency)
     .map(s => s!.fluency!.score);
   
-  const overallScores = scores
-    .filter(s => s?.overallScore)
-    .map(s => s!.overallScore);
+  const overallScores = allOverallScores;
 
   const average = (arr: number[]) => arr.length > 0 ? arr.reduce((a, b) => a + b, 0) / arr.length : 0;
 

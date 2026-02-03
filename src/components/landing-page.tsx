@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { CheckCircle, TrendingUp, Zap, Bot, ArrowRight, Star, X } from 'lucide-react';
+import { CheckCircle, TrendingUp, Zap, Bot, ArrowRight, Star, X, ChevronDown } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { AIRobot } from './ai-robot';
 import logo from '../assets/fbaa49f59eaf54473f226d88f4a207918ca971f2.png';
@@ -11,6 +11,7 @@ interface LandingPageProps {
 export function LandingPage({ onGetStarted }: LandingPageProps) {
   const [showRobot, setShowRobot] = useState(false);
   const [showModal, setShowModal] = useState<'how-it-works' | 'testimonials' | null>(null);
+  const [openFAQ, setOpenFAQ] = useState<number | null>(null);
   
   useEffect(() => {
     const handleScroll = () => {
@@ -146,6 +147,83 @@ export function LandingPage({ onGetStarted }: LandingPageProps) {
                 </div>
                 <h3 className="text-xl font-bold text-gray-900 mb-2">{feature.title}</h3>
                 <p className="text-gray-600">{feature.description}</p>
+              </motion.div>
+            ))}
+          </div>
+        </div>
+      </section>
+
+      {/* FAQ Section */}
+      <section className="py-20 px-4 sm:px-6 lg:px-8 bg-white">
+        <div className="max-w-4xl mx-auto">
+          <div className="text-center mb-16">
+            <h2 className="text-4xl font-bold text-gray-900 mb-4">
+              Frequently Asked Questions
+            </h2>
+            <p className="text-xl text-gray-600">
+              Everything you need to know about AssessAI
+            </p>
+          </div>
+
+          <div className="space-y-4">
+            {[
+              {
+                question: 'How does the AI feedback work?',
+                answer: 'Our advanced AI analyzes your responses and provides instant, detailed feedback on grammar, vocabulary, pronunciation, and overall communication effectiveness. The feedback includes specific suggestions for improvement and explanations to help you learn faster.'
+              },
+              {
+                question: 'Can I track my progress over time?',
+                answer: 'Yes! AssessAI provides comprehensive analytics and progress tracking. You can view detailed reports on your performance, identify areas for improvement, and watch your skills develop with beautiful visual charts and metrics.'
+              },
+              {
+                question: 'Is the platform suitable for all English levels?',
+                answer: 'Absolutely! Our adaptive learning algorithm adjusts the difficulty based on your performance. Whether you\'re a beginner or advanced learner, the platform will customize questions and challenges to match your current level.'
+              },
+              {
+                question: 'What skills can I improve with AssessAI?',
+                answer: 'You can improve your Reading, Writing, Listening, and Speaking skills. Our platform covers grammar, vocabulary, pronunciation, fluency, and communication skills across all proficiency levels.'
+              },
+              {
+                question: 'Do you offer 24/7 AI tutor support?',
+                answer: 'Yes! Our AI Study Assistant is available 24/7 to answer your questions about English grammar, vocabulary, pronunciation, and provide guidance on improving your skills.'
+              },
+              {
+                question: 'Can I use AssessAI on mobile devices?',
+                answer: 'Yes, AssessAI is fully responsive and works seamlessly on smartphones, tablets, and computers. You can practice English anytime, anywhere, at your own pace.'
+              }
+            ].map((faq, index) => (
+              <motion.div
+                key={index}
+                initial={{ opacity: 0, y: 10 }}
+                whileInView={{ opacity: 1, y: 0 }}
+                transition={{ duration: 0.3, delay: index * 0.05 }}
+                viewport={{ once: true }}
+                className="border border-gray-200 rounded-lg overflow-hidden hover:border-indigo-300 transition-colors"
+              >
+                <button
+                  onClick={() => setOpenFAQ(openFAQ === index ? null : index)}
+                  className="w-full px-6 py-4 flex items-center justify-between bg-white hover:bg-gray-50 transition-colors text-left"
+                >
+                  <span className="text-lg font-semibold text-gray-900">{faq.question}</span>
+                  <ChevronDown
+                    className={`w-5 h-5 text-indigo-600 transition-transform ${
+                      openFAQ === index ? 'rotate-180' : ''
+                    }`}
+                  />
+                </button>
+                <AnimatePresence>
+                  {openFAQ === index && (
+                    <motion.div
+                      initial={{ opacity: 0, height: 0 }}
+                      animate={{ opacity: 1, height: 'auto' }}
+                      exit={{ opacity: 0, height: 0 }}
+                      transition={{ duration: 0.3 }}
+                      className="border-t border-gray-200 bg-gray-50 px-6 py-4"
+                    >
+                      <p className="text-gray-700 leading-relaxed">{faq.answer}</p>
+                    </motion.div>
+                  )}
+                </AnimatePresence>
               </motion.div>
             ))}
           </div>

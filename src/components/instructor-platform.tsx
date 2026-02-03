@@ -3,6 +3,7 @@ import { motion } from 'motion/react';
 import {
   Home, FileText, Users, ClipboardList, LogOut, User, Plus, Edit, Trash2,
   ChevronRight, ChevronDown, BarChart3, Clock, CheckCircle, AlertCircle, Sparkles, Target, Award, Star, Send,
+  Zap, TrendingUp, BookOpen, Activity,
 } from 'lucide-react';
 import { type User as UserType } from '../lib/auth';
 import {
@@ -40,7 +41,7 @@ const COURSE_OPTIONS = [
 const ASSIGNMENT_TYPES: { value: AssignmentType; label: string }[] = [
   { value: 'writing', label: 'Writing' },
   { value: 'speaking', label: 'Speaking' },
-  { value: 'handwriting', label: 'Handwriting' },
+  { value: 'listening', label: 'Listening' },
   { value: 'quiz', label: 'Quiz' },
 ];
 
@@ -394,6 +395,115 @@ export function InstructorPlatform({ onBack, user }: InstructorPlatformProps) {
                 </motion.div>
               )}
             </div>
+
+            {/* Quick Actions Panel */}
+            <motion.div
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ delay: 0.5 }}
+              className="bg-gradient-to-r from-indigo-500 via-purple-500 to-pink-500 rounded-xl p-6 text-white shadow-xl mb-8"
+            >
+              <h2 className="text-lg font-bold mb-4 flex items-center gap-2">
+                <Sparkles className="w-5 h-5" />
+                Quick Actions
+              </h2>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                <button
+                  onClick={() => {
+                    setCurrentScreen('assignments');
+                    setShowCreateAssignment(true);
+                  }}
+                  className="flex items-center justify-center gap-2 px-4 py-3 bg-white/20 hover:bg-white/30 backdrop-blur-sm rounded-lg transition-all font-medium"
+                >
+                  <Plus className="w-5 h-5" />
+                  Create Assignment
+                </button>
+                <button
+                  onClick={() => setShowAddStudents(true)}
+                  className="flex items-center justify-center gap-2 px-4 py-3 bg-white/20 hover:bg-white/30 backdrop-blur-sm rounded-lg transition-all font-medium"
+                >
+                  <Users className="w-5 h-5" />
+                  Add Students
+                </button>
+              </div>
+            </motion.div>
+
+            {/* Upcoming Assignments */}
+            <motion.div
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ delay: 0.6 }}
+              className="bg-white rounded-xl shadow-lg p-6 border border-gray-200 mb-8"
+            >
+              <h2 className="text-lg font-bold text-gray-900 mb-4 flex items-center gap-2">
+                <BookOpen className="w-5 h-5 text-indigo-600" />
+                Upcoming Assignments
+              </h2>
+              <div className="space-y-3">
+                {assignments.slice(0, 3).map((assignment) => (
+                  <div key={assignment.id} className="flex items-center justify-between p-3 bg-gray-50 rounded-lg hover:bg-indigo-50 transition-colors">
+                    <div className="flex-1">
+                      <p className="font-medium text-gray-900">{assignment.title}</p>
+                      <p className="text-xs text-gray-500">{assignment.type} • {COURSE_OPTIONS.find(c => c.id === assignment.courseId)?.label}</p>
+                    </div>
+                    <div className="text-right">
+                      <p className="text-xs font-semibold text-indigo-600">{getAssignedStudents(assignment.id).length} students</p>
+                      <p className="text-xs text-gray-500">Max: {assignment.maxScore} pts</p>
+                    </div>
+                  </div>
+                ))}
+                {assignments.length === 0 && (
+                  <p className="text-center text-gray-500 py-4">No assignments yet</p>
+                )}
+              </div>
+            </motion.div>
+
+            {/* Top Performers */}
+            <motion.div
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ delay: 0.8 }}
+              className="bg-white rounded-xl shadow-lg p-6 border border-gray-200 mb-8"
+            >
+              <h2 className="text-lg font-bold text-gray-900 mb-4 flex items-center gap-2">
+                <Award className="w-5 h-5 text-amber-600" />
+                Top Performers
+              </h2>
+              <div className="space-y-3">
+                {rosterStudents.length > 0 ? (
+                  rosterStudents
+                    .map((student) => {
+                      const studentSubmissions = submissions.filter(s => s.studentId === student.id);
+                      const avgScore = studentSubmissions.length > 0
+                        ? Math.round(studentSubmissions.reduce((sum, s) => sum + (s.instructorScore ?? s.aiScore ?? 0), 0) / studentSubmissions.length)
+                        : 0;
+                      return { student, avgScore, submissionCount: studentSubmissions.length };
+                    })
+                    .sort((a, b) => b.avgScore - a.avgScore)
+                    .slice(0, 3)
+                    .map((item, idx) => (
+                      <div key={item.student.id} className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
+                        <div className="flex items-center gap-3">
+                          <div className="w-8 h-8 rounded-full bg-gradient-to-br from-indigo-500 to-purple-500 flex items-center justify-center text-white text-sm font-bold">
+                            {idx + 1}
+                          </div>
+                          <div>
+                            <p className="font-medium text-gray-900">{item.student.name}</p>
+                            <p className="text-xs text-gray-500">{item.submissionCount} submissions</p>
+                          </div>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <Star className="w-4 h-4 text-amber-500 fill-amber-500" />
+                          <p className="text-sm font-bold text-gray-900">{item.avgScore}%</p>
+                        </div>
+                      </div>
+                    ))
+                ) : (
+                  <p className="text-center text-gray-500 py-4">No students yet</p>
+                )}
+              </div>
+            </motion.div>
+
             {pendingSubmissions.length > 0 ? (
               <motion.div
                 initial={{ opacity: 0, y: 20 }}
@@ -667,7 +777,14 @@ export function InstructorPlatform({ onBack, user }: InstructorPlatformProps) {
                         {s.name.charAt(0).toUpperCase()}
                       </div>
                       <div>
-                        <p className="font-medium text-gray-900">{s.name}</p>
+                        <p className="font-medium text-gray-900 flex items-center gap-2">
+                          {s.name}
+                          {s.cefrLevel && (
+                            <span className="px-2 py-0.5 text-xs font-semibold bg-purple-100 text-purple-700 rounded-md border border-purple-200">
+                              {s.cefrLevel}
+                            </span>
+                          )}
+                        </p>
                         <p className="text-xs text-gray-500">{s.email}</p>
                       </div>
                     </div>

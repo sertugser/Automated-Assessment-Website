@@ -1,6 +1,6 @@
 // Assignment Management System
 
-export type AssignmentType = 'writing' | 'speaking' | 'handwriting' | 'quiz';
+export type AssignmentType = 'writing' | 'speaking' | 'listening' | 'quiz';
 export type AssignmentStatus = 'draft' | 'published' | 'archived';
 export type SubmissionStatus = 'pending' | 'evaluating' | 'completed' | 'reviewed';
 
