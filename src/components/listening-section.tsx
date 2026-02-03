@@ -466,9 +466,10 @@ function getTimeInfo(sentences: string[], rate: number) {
 
 interface ListeningSectionProps {
   cefrLevel?: CEFRLevel | null;
+  onActivitySaved?: () => void;
 }
 
-export function ListeningSection({ cefrLevel }: ListeningSectionProps) {
+export function ListeningSection({ cefrLevel, onActivitySaved }: ListeningSectionProps) {
   const { t } = useLanguage();
   const [isPlaying, setIsPlaying] = useState(false);
   const [selectedLevel, setSelectedLevel] = useState<Level>(cefrLevel && LEVEL_ORDER.includes(cefrLevel) ? cefrLevel : 'B1');
@@ -916,7 +917,10 @@ export function ListeningSection({ cefrLevel }: ListeningSectionProps) {
               </button>
               <button
                 type="button"
-                onClick={() => setSubmitted(true)}
+                onClick={() => {
+                  setSubmitted(true);
+                  onActivitySaved?.();
+                }}
                 disabled={questions.some((q) => !answers[q.id])}
                 className="px-4 py-2.5 rounded-xl bg-gradient-to-r from-indigo-600 to-purple-600 text-white font-semibold hover:shadow-lg transition-all disabled:opacity-50 disabled:cursor-not-allowed"
               >

@@ -29,6 +29,7 @@ import { useLanguage } from '../contexts/LanguageContext';
 interface WritingSectionProps {
   initialActivityId?: string | null;
   assignmentId?: string | null;
+  onActivitySaved?: () => void;
 }
 
 // Writing prompts are now generated dynamically by AI - no hard-coded data
@@ -78,7 +79,7 @@ const formatActivityDate = (dateString: string): string => {
   }
 };
 
-export function WritingSection({ initialActivityId, assignmentId }: WritingSectionProps) {
+export function WritingSection({ initialActivityId, assignmentId, onActivitySaved }: WritingSectionProps) {
   const { t } = useLanguage();
   const [selectedPrompt, setSelectedPrompt] = useState<number | null>(null);
   const [essayText, setEssayText] = useState('');
@@ -580,6 +581,7 @@ export function WritingSection({ initialActivityId, assignmentId }: WritingSecti
         writingSimpleAnalysis: simpleGemini,
         writingDetailedFeedback: normalizedFeedback,
       });
+      onActivitySaved?.();
 
       // If this was an instructor assignment, create submission for instructor review
       if (assignmentId) {

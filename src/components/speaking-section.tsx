@@ -75,9 +75,10 @@ const formatDuration = (): string => {
 interface SpeakingSectionProps {
   initialActivityId?: string | null;
   assignmentId?: string | null;
+  onActivitySaved?: () => void;
 }
 
-export function SpeakingSection({ initialActivityId, assignmentId }: SpeakingSectionProps) {
+export function SpeakingSection({ initialActivityId, assignmentId, onActivitySaved }: SpeakingSectionProps) {
   const [isRecording, setIsRecording] = useState(false);
   const [isPaused, setIsPaused] = useState(false);
   const [recordingTime, setRecordingTime] = useState(0);
@@ -489,6 +490,7 @@ export function SpeakingSection({ initialActivityId, assignmentId }: SpeakingSec
         speakingTranscript: transcript,
         speakingFeedback: normalizedFeedback,
       });
+      onActivitySaved?.();
 
       toast.success(`Analysis complete! Score: ${computedOverall}%`);
     } catch (error) {

@@ -1,8 +1,10 @@
-import { useState } from 'react';
+import { useState, useRef, useCallback } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { Trophy, Target, Clock, TrendingUp, RotateCcw, BookOpen, Share2, Download, CheckCircle, XCircle, ChevronDown, ChevronUp } from 'lucide-react';
+import { Trophy, Target, Clock, TrendingUp, RotateCcw, BookOpen, CheckCircle, XCircle, ChevronDown, ChevronUp } from 'lucide-react';
 import { QuizResult } from './assessment-platform';
 import { useLanguage } from '../contexts/LanguageContext';
+
+type ReviewFilter = 'all' | 'wrong' | 'correct' | 'truefalse';
 
 interface ResultsScreenProps {
   results: QuizResult;
@@ -11,10 +13,42 @@ interface ResultsScreenProps {
   onBack?: () => void;
 }
 
+/** Detect if question is True/False (2 options, typically True/False or Yes/No) */
+function isTrueFalseQuestion(q: { options?: string[] }): boolean {
+  const opts = q.options ?? [];
+  if (opts.length !== 2) return false;
+  const a = opts[0]?.trim().toLowerCase() ?? '';
+  const b = opts[1]?.trim().toLowerCase() ?? '';
+  const tf = (s: string) => /^(true|false|yes|no|doğru|yanlış|evet|hayır)$/.test(s);
+  return tf(a) && tf(b);
+}
+
 export function ResultsScreen({ results, onRetry, onNewCourse, onBack }: ResultsScreenProps) {
   const { t } = useLanguage();
   const { score, totalQuestions, correctAnswers, timeSpent, courseTitle, questions = [], userAnswers = [] } = results;
   const [expandedReview, setExpandedReview] = useState(true);
+  const [reviewFilter, setReviewFilter] = useState<ReviewFilter>('all');
+  const [focusedQuestionIndex, setFocusedQuestionIndex] = useState<number | null>(null);
+  const focusTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const scrollToQuestion = useCallback((idx: number) => {
+    if (focusTimeoutRef.current) clearTimeout(focusTimeoutRef.current);
+    setFocusedQuestionIndex(idx);
+    focusTimeoutRef.current = setTimeout(() => setFocusedQuestionIndex(null), 2500);
+    const el = document.getElementById(`review-q-${idx}`);
+    el?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  }, []);
+
+  const filteredQuestions = questions
+    .map((q, i) => ({ q, origIdx: i }))
+    .filter(({ q, origIdx }) => {
+      const userChoice = userAnswers[origIdx];
+      const isCorrect = userChoice != null && userChoice === q.correctAnswer;
+      if (reviewFilter === 'wrong') return !isCorrect;
+      if (reviewFilter === 'correct') return isCorrect;
+      if (reviewFilter === 'truefalse') return isTrueFalseQuestion(q);
+      return true;
+    });
   
   const formatTime = (seconds: number) => {
     const mins = Math.floor(seconds / 60);
@@ -73,7 +107,7 @@ export function ResultsScreen({ results, onRetry, onNewCourse, onBack }: Results
         </div>
 
         {/* Stats Grid */}
-        <div className="p-5 grid md:grid-cols-4 gap-4">
+        <div className="p-5 grid md:grid-cols-3 gap-4">
           <motion.div
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
@@ -112,46 +146,35 @@ export function ResultsScreen({ results, onRetry, onNewCourse, onBack }: Results
             </div>
             <div className="text-sm text-gray-600">{t('results.avgPerQuestion')}</div>
           </motion.div>
-
-          <motion.div
-            initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ delay: 0.7 }}
-            className="bg-gradient-to-br from-green-50 to-green-100 p-4 rounded-xl text-center"
-          >
-            <Trophy className="w-6 h-6 text-green-600 mx-auto mb-2" />
-            <div className="text-2xl font-bold text-green-600 mb-0.5">
-              {score >= 70 ? 'A' : score >= 50 ? 'B' : 'C'}
-            </div>
-            <div className="text-sm text-gray-600">{t('results.grade')}</div>
-          </motion.div>
         </div>
 
-        {/* AI Insights */}
+        {/* AI Insights - use real AI feedback when available */}
         <div className="p-5 bg-gradient-to-br from-indigo-50 to-purple-50 border-t border-gray-200">
           <h3 className="text-lg font-bold text-gray-900 mb-3">{t('results.aiAnalysis')}</h3>
           <div className="space-y-3">
-            <div className="bg-white p-4 rounded-xl">
-              <div className="flex items-start gap-3">
-                <div className="w-2 h-2 bg-green-500 rounded-full mt-2"></div>
-                <div>
-                  <p className="font-semibold text-gray-900">{t('results.strongAreas')}</p>
-                  <p className="text-gray-600 text-sm">
-                    You demonstrated excellent understanding of core concepts. Your response time shows confidence in the material.
-                  </p>
+            {(results.feedback?.strongAreas || score >= 70) && (
+              <div className="bg-white p-4 rounded-xl">
+                <div className="flex items-start gap-3">
+                  <div className="w-2 h-2 bg-green-500 rounded-full mt-2"></div>
+                  <div>
+                    <p className="font-semibold text-gray-900">{t('results.strongAreas')}</p>
+                    <p className="text-gray-600 text-sm">
+                      {results.feedback?.strongAreas || 'You demonstrated good understanding of core concepts. Your response time shows confidence in the material.'}
+                    </p>
+                  </div>
                 </div>
               </div>
-            </div>
-            {score < 90 && (
+            )}
+            {(score < 90 || (results.feedback?.areasForImprovement ?? '').length > 0) && (
               <div className="bg-white p-4 rounded-xl">
                 <div className="flex items-start gap-3">
                   <div className="w-2 h-2 bg-yellow-500 rounded-full mt-2"></div>
-                <div>
-                  <p className="font-semibold text-gray-900">{t('results.areasToImprove')}</p>
-                  <p className="text-gray-600 text-sm">
-                    Review advanced topics and practice more challenging questions to reach mastery level.
-                  </p>
-                </div>
+                  <div>
+                    <p className="font-semibold text-gray-900">{t('results.areasToImprove')}</p>
+                    <p className="text-gray-600 text-sm">
+                      {results.feedback?.areasForImprovement || 'Review advanced topics and practice more challenging questions to reach mastery level.'}
+                    </p>
+                  </div>
                 </div>
               </div>
             )}
@@ -161,9 +184,9 @@ export function ResultsScreen({ results, onRetry, onNewCourse, onBack }: Results
                 <div>
                   <p className="font-semibold text-gray-900">{t('results.recommendation')}</p>
                   <p className="text-gray-600 text-sm">
-                    {score >= 90 
+                    {results.feedback?.recommendation || (score >= 90
                       ? 'Try an advanced course to continue challenging yourself!'
-                      : 'Review the material and retry to improve your score. Practice makes perfect!'}
+                      : 'Review the material and retry to improve your score. Practice makes perfect!')}
                   </p>
                 </div>
               </div>
@@ -184,71 +207,134 @@ export function ResultsScreen({ results, onRetry, onNewCourse, onBack }: Results
               </div>
               {expandedReview ? <ChevronUp className="w-5 h-5" /> : <ChevronDown className="w-5 h-5" />}
             </button>
-            <AnimatePresence>
-              {expandedReview && (
-                <motion.div
-                  initial={{ height: 0, opacity: 0 }}
-                  animate={{ height: 'auto', opacity: 1 }}
-                  exit={{ height: 0, opacity: 0 }}
-                  className="space-y-4 overflow-hidden"
-                >
-                  {questions.map((q, idx) => {
-                    const userChoice = userAnswers[idx];
-                    const isCorrect = userChoice !== null && userChoice !== undefined && userChoice === q.correctAnswer;
-                    const userText = userChoice != null && q.options[userChoice] != null ? q.options[userChoice] : '—';
-                    const correctText = q.options[q.correctAnswer] ?? '—';
-                    return (
-                      <motion.div
-                        key={idx}
-                        initial={{ opacity: 0, y: 10 }}
-                        animate={{ opacity: 1, y: 0 }}
-                        transition={{ delay: idx * 0.03 }}
-                        className={`rounded-xl p-4 border-2 ${
-                          isCorrect ? 'bg-green-50 border-green-200' : 'bg-red-50 border-red-200'
-                        }`}
-                      >
-                        <div className="flex items-start gap-3 mb-2">
-                          <div className={`w-8 h-8 rounded-lg flex items-center justify-center shrink-0 ${
-                            isCorrect ? 'bg-green-500' : 'bg-red-500'
-                          }`}>
-                            {isCorrect ? (
-                              <CheckCircle className="w-5 h-5 text-white" />
-                            ) : (
-                              <XCircle className="w-5 h-5 text-white" />
-                            )}
-                          </div>
-                          <div className="flex-1 min-w-0">
-                            <p className="font-semibold text-gray-900 mb-2">
-                              {idx + 1}. {q.question}
-                            </p>
-                            <div className="space-y-1 text-sm">
-                              <p>
-                                <span className="text-gray-600">{t('results.yourAnswer')}:</span>{' '}
-                                <span className={isCorrect ? 'text-green-700 font-medium' : 'text-red-700 font-medium'}>
-                                  {userText}
-                                </span>
+            {expandedReview && (
+              <>
+                <div className="flex flex-wrap gap-2 mb-4">
+                  {(['all', 'wrong', 'correct', 'truefalse'] as const).map((filter) => (
+                    <button
+                      key={filter}
+                      type="button"
+                      onClick={() => setReviewFilter(filter)}
+                      className={`px-4 py-2 rounded-xl text-sm font-semibold transition-all ${
+                        reviewFilter === filter
+                          ? 'bg-indigo-600 text-white shadow-md'
+                          : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                      }`}
+                    >
+                      {filter === 'all' && t('results.filterAll')}
+                      {filter === 'wrong' && t('results.filterWrong')}
+                      {filter === 'correct' && t('results.filterCorrect')}
+                      {filter === 'truefalse' && t('results.filterTrueFalse')}
+                    </button>
+                  ))}
+                </div>
+                <AnimatePresence>
+                  <motion.div
+                    initial={{ height: 0, opacity: 0 }}
+                    animate={{ height: 'auto', opacity: 1 }}
+                    exit={{ height: 0, opacity: 0 }}
+                    className="space-y-4 overflow-hidden"
+                  >
+                    {filteredQuestions.map(({ q, origIdx }, listIdx) => {
+                      const userChoice = userAnswers[origIdx];
+                      const isCorrect = userChoice !== null && userChoice !== undefined && userChoice === q.correctAnswer;
+                      const userText = userChoice != null && q.options[userChoice] != null ? q.options[userChoice] : '—';
+                      const correctText = q.options[q.correctAnswer] ?? '—';
+                      const isFocused = focusedQuestionIndex === origIdx;
+                      return (
+                        <motion.div
+                          key={origIdx}
+                          id={`review-q-${origIdx}`}
+                          role="button"
+                          tabIndex={0}
+                          onClick={() => scrollToQuestion(origIdx)}
+                          onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); scrollToQuestion(origIdx); } }}
+                          initial={{ opacity: 0, y: 10 }}
+                          animate={{ opacity: 1, y: 0 }}
+                          transition={{ delay: listIdx * 0.03 }}
+                          className={`rounded-xl p-4 border-2 cursor-pointer transition-all hover:shadow-md ${
+                            isCorrect ? 'bg-green-50 border-green-200' : 'bg-red-50 border-red-200'
+                          } ${isFocused ? 'ring-2 ring-indigo-500 ring-offset-2 shadow-lg' : ''}`}
+                        >
+                          <div className="flex items-start gap-3">
+                            <div className={`w-8 h-8 rounded-lg flex items-center justify-center shrink-0 ${
+                              isCorrect ? 'bg-green-500' : 'bg-red-500'
+                            }`}>
+                              {isCorrect ? (
+                                <CheckCircle className="w-5 h-5 text-white" />
+                              ) : (
+                                <XCircle className="w-5 h-5 text-white" />
+                              )}
+                            </div>
+                            <div className="flex-1 min-w-0">
+                              {/* Full question text - no truncation, so user can see full context */}
+                              <p className="font-semibold text-gray-900 mb-3 whitespace-pre-wrap break-words">
+                                {origIdx + 1}. {q.question}
                               </p>
-                              {!isCorrect && (
+                              {/* All options so user can see full question context */}
+                              {q.options && q.options.length > 0 && (
+                                <div className="mb-3">
+                                  <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">{t('results.options')}</p>
+                                  <ul className="space-y-1.5">
+                                    {q.options.map((opt, oi) => {
+                                      const isUserChoice = userChoice === oi;
+                                      const isCorrectOpt = oi === q.correctAnswer;
+                                      return (
+                                        <li
+                                          key={oi}
+                                          className={`rounded-lg px-3 py-2 text-sm border flex items-center justify-between gap-2 ${
+                                            isCorrectOpt
+                                              ? 'bg-green-100 border-green-300 text-green-800 font-medium'
+                                              : isUserChoice && !isCorrect
+                                                ? 'bg-red-100 border-red-300 text-red-800 font-medium'
+                                                : 'bg-gray-50 border-gray-200 text-gray-700'
+                                          }`}
+                                        >
+                                          <span><span className="mr-2 font-mono text-gray-500">{String.fromCharCode(65 + oi)}.</span>{opt}</span>
+                                          <span className="shrink-0">
+                                            {isCorrectOpt && <CheckCircle className="w-4 h-4 text-green-600" />}
+                                            {isUserChoice && !isCorrect && !isCorrectOpt && <XCircle className="w-4 h-4 text-red-600" />}
+                                          </span>
+                                        </li>
+                                      );
+                                    })}
+                                  </ul>
+                                </div>
+                              )}
+                              <div className="space-y-1 text-sm">
                                 <p>
-                                  <span className="text-gray-600">{t('results.correctAnswer')}:</span>{' '}
-                                  <span className="text-green-700 font-medium">{correctText}</span>
+                                  <span className="text-gray-600">{t('results.yourAnswer')}:</span>{' '}
+                                  <span className={isCorrect ? 'text-green-700 font-medium' : 'text-red-700 font-medium'}>
+                                    {userText}
+                                  </span>
+                                </p>
+                                {!isCorrect && (
+                                  <p>
+                                    <span className="text-gray-600">{t('results.correctAnswer')}:</span>{' '}
+                                    <span className="text-green-700 font-medium">{correctText}</span>
+                                  </p>
+                                )}
+                              </div>
+                              {(q.explanation && q.explanation.trim() && q.explanation !== 'No explanation provided') ? (
+                                <p className="mt-2 text-gray-700 text-sm pt-2 border-t border-gray-200">
+                                  <span className="font-medium text-gray-900">{t('results.explanation')}:</span>{' '}
+                                  {q.explanation}
+                                </p>
+                              ) : (
+                                <p className="mt-2 text-gray-600 text-sm pt-2 border-t border-gray-200 italic">
+                                  <span className="font-medium text-gray-900">{t('results.explanation')}:</span>{' '}
+                                  {t('results.explanationFallback')}
                                 </p>
                               )}
                             </div>
-                            {q.explanation && (
-                              <p className="mt-2 text-gray-700 text-sm pt-2 border-t border-gray-200">
-                                <span className="font-medium text-gray-900">{t('results.explanation')}:</span>{' '}
-                                {q.explanation}
-                              </p>
-                            )}
                           </div>
-                        </div>
-                      </motion.div>
-                    );
-                  })}
-                </motion.div>
-              )}
-            </AnimatePresence>
+                        </motion.div>
+                      );
+                    })}
+                  </motion.div>
+                </AnimatePresence>
+              </>
+            )}
           </div>
         )}
 
@@ -268,17 +354,6 @@ export function ResultsScreen({ results, onRetry, onNewCourse, onBack }: Results
             >
               <BookOpen className="w-4 h-4" />
               {t('common.tryAnotherCourse')}
-            </button>
-          </div>
-          
-          <div className="grid md:grid-cols-2 gap-3">
-            <button className="flex items-center justify-center gap-2 bg-gray-100 text-gray-700 px-4 py-2.5 rounded-xl font-medium text-sm hover:bg-gray-200 transition-all">
-              <Share2 className="w-4 h-4" />
-              {t('common.shareResults')}
-            </button>
-            <button className="flex items-center justify-center gap-2 bg-gray-100 text-gray-700 px-4 py-2.5 rounded-xl font-medium text-sm hover:bg-gray-200 transition-all">
-              <Download className="w-4 h-4" />
-              {t('common.downloadCertificate')}
             </button>
           </div>
         </div>

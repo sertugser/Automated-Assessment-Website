@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { 
   ArrowLeft, Trophy, Zap, Target, User, LogOut, Home, 
   BarChart3, Mic, Edit, Brain, BookOpen, MessageSquare, Headphones,
@@ -19,7 +19,7 @@ import { DictionarySection } from './dictionary-section';
 import { HomeworkSection } from './homework-section';
 import { type User as UserType, updateUser, getCurrentUser } from '../lib/auth';
 import { getUserStats, getRecentActivities, saveActivity, analyzeUserWeaknesses, getMistakeCountsByTopic, getWrongAnswerDetails, getActivitiesByType, getActivities, type UserActivity } from '../lib/user-progress';
-import { generatePersonalizedRecommendations, getLearningDifficultyAnalysis, getCommonMistakesAnalysis, type LearningDifficultyAnalysis, type CommonMistakeAnalysis } from '../lib/ai-services';
+import { generatePersonalizedRecommendations, getLearningDifficultyAnalysis, getCommonMistakesAnalysis, generateQuizPerformanceAnalysis, type LearningDifficultyAnalysis, type CommonMistakeAnalysis } from '../lib/ai-services';
 import { getAssignment } from '../lib/assignments';
 import { getNotificationsForStudent, markNotificationRead, deleteNotification, markAllNotificationsRead, type AssignmentNotification } from '../lib/notifications';
 import { useLanguage } from '../contexts/LanguageContext';
@@ -267,15 +267,37 @@ export function AssessmentPlatform({ onBack, user }: AssessmentPlatformProps) {
     }
   }, [commonMistakes, currentUser?.id]);
 
-  // Load AI-generated recommendations and learning difficulty analysis
+  // Load AI-generated recommendations and learning difficulty analysis (no 30s interval - saves tokens)
+  const RECOMMENDATIONS_CACHE_KEY = currentUser?.id ? `assessai_recommendations_${currentUser.id}` : null;
+  const RECOMMENDATIONS_CACHE_TTL_MS = 30 * 60 * 1000; // 30 minutes
+
   useEffect(() => {
     const loadRecommendations = async () => {
       setLoadingRecommendations(true);
       try {
+        // Use cache if valid (avoid repeated API calls)
+        if (RECOMMENDATIONS_CACHE_KEY) {
+          try {
+            const cached = localStorage.getItem(RECOMMENDATIONS_CACHE_KEY);
+            if (cached) {
+              const { timestamp, data } = JSON.parse(cached);
+              if (timestamp && data && Array.isArray(data) && Date.now() - timestamp < RECOMMENDATIONS_CACHE_TTL_MS) {
+                const mapped: Recommendation[] = (data as Recommendation[]).map(rec => ({
+                  ...rec,
+                  icon: iconMap[rec.icon] || BookOpen,
+                }));
+                setRecommendations(mapped);
+                setLoadingRecommendations(false);
+                return;
+              }
+            }
+          } catch (_) { /* ignore invalid cache */ }
+        }
+
         const stats = getUserStats();
         const recentActivities = getRecentActivities(10);
         const weaknessAnalysis = analyzeUserWeaknesses();
-        
+
         const aiRecommendations = await generatePersonalizedRecommendations(
           {
             streak: stats.streak,
@@ -291,17 +313,26 @@ export function AssessmentPlatform({ onBack, user }: AssessmentPlatformProps) {
           })),
           weaknessAnalysis
         );
-        
+
         // Map AI recommendations to component format with icon components
         const mappedRecommendations: Recommendation[] = aiRecommendations.map(rec => ({
           ...rec,
           icon: iconMap[rec.icon] || BookOpen,
         }));
-        
+
         setRecommendations(mappedRecommendations);
+
+        // Cache for 30 minutes to reduce token usage
+        if (RECOMMENDATIONS_CACHE_KEY && mappedRecommendations.length > 0) {
+          try {
+            localStorage.setItem(RECOMMENDATIONS_CACHE_KEY, JSON.stringify({
+              timestamp: Date.now(),
+              data: mappedRecommendations.map(({ icon, ...rest }) => rest),
+            }));
+          } catch (_) { /* ignore */ }
+        }
       } catch (error) {
         console.error('Error loading recommendations:', error);
-        // Fallback to default recommendations
         setRecommendations([
           {
             id: 'default-1',
@@ -380,19 +411,22 @@ export function AssessmentPlatform({ onBack, user }: AssessmentPlatformProps) {
       }
     };
 
-    loadRecommendations();
-    loadDifficultyAnalysis();
-    
-    // Refresh recommendations and difficulty analysis when on dashboard
-    const interval = setInterval(() => {
-      if (currentScreen === 'dashboard') {
-        loadRecommendations();
-        loadDifficultyAnalysis();
-      }
-    }, 30000);
-    
-    return () => clearInterval(interval);
-  }, [currentScreen, currentUser?.cefrLevel, difficultyRefreshTrigger]);
+    // Only fetch when on dashboard to avoid wasting tokens on other screens
+    if (currentScreen === 'dashboard') {
+      loadRecommendations();
+      loadDifficultyAnalysis();
+    }
+  }, [currentScreen, currentUser?.cefrLevel, currentUser?.id, difficultyRefreshTrigger]);
+
+  // Notify dashboard to refresh when user completes speaking, writing, or listening (not just quiz)
+  const handleActivitySaved = useCallback(() => {
+    if (currentUser?.id) {
+      try {
+        localStorage.removeItem(`assessai_recommendations_${currentUser.id}`);
+      } catch (_) { /* ignore */ }
+    }
+    setDifficultyRefreshTrigger(prev => prev + 1);
+  }, [currentUser?.id]);
 
   const generateRecommendationsFromQuiz = (results: QuizResult) => {
     const newRecs: Recommendation[] = [];
@@ -482,18 +516,32 @@ export function AssessmentPlatform({ onBack, user }: AssessmentPlatformProps) {
     navigateToScreen('course-quiz');
   };
 
-  const handleQuizComplete = (results: QuizResult) => {
+  const handleQuizComplete = async (results: QuizResult) => {
     setResultsFromHistory(false);
-    setQuizResults(results);
 
-    // Generate simple feedback based on results
-    const feedback = {
-      strongAreas: results.score >= 70 ? 'You demonstrated excellent understanding of core concepts. Your response time shows confidence in the material.' : '',
-      areasForImprovement: results.score < 90 ? 'Review advanced topics and practice more challenging questions to reach mastery level.' : '',
-      recommendation: results.score >= 90 
-        ? 'Try an advanced course to continue challenging yourself!'
-        : 'Review the material and retry to improve your score. Practice makes perfect!',
-    };
+    // Real AI performance analysis (detailed, based on actual wrong answers and topics)
+    let feedback: { strongAreas: string; areasForImprovement: string; recommendation: string };
+    try {
+      feedback = await generateQuizPerformanceAnalysis({
+        score: results.score,
+        totalQuestions: results.totalQuestions,
+        correctAnswers: results.correctAnswers,
+        timeSpent: results.timeSpent,
+        courseTitle: results.courseTitle,
+        questions: results.questions,
+        userAnswers: results.userAnswers,
+      });
+    } catch (e) {
+      console.warn('Quiz AI analysis failed, using fallback', e);
+      feedback = {
+        strongAreas: results.score >= 70 ? 'You demonstrated good understanding of core concepts. Your response time shows confidence in the material.' : '',
+        areasForImprovement: results.score < 90 ? 'Review advanced topics and practice more challenging questions to reach mastery level.' : '',
+        recommendation: results.score >= 90 ? 'Try an advanced course to continue challenging yourself!' : 'Review the material and retry to improve your score. Practice makes perfect!',
+      };
+    }
+
+    const resultsWithFeedback: QuizResult = { ...results, feedback };
+    setQuizResults(resultsWithFeedback);
 
     try {
       saveActivity({
@@ -510,7 +558,7 @@ export function AssessmentPlatform({ onBack, user }: AssessmentPlatformProps) {
         quizReadingPassage: results.readingPassage,
         quizFeedback: feedback,
       });
-      setDifficultyRefreshTrigger(prev => prev + 1);
+      handleActivitySaved();
       const newRecs = generateRecommendationsFromQuiz(results);
       if (newRecs.length > 0) {
         setRecommendations(prev => {
@@ -918,15 +966,20 @@ export function AssessmentPlatform({ onBack, user }: AssessmentPlatformProps) {
           <SpeakingSection
             initialActivityId={initialSpeakingActivityId}
             assignmentId={initialSpeakingAssignmentId}
+            onActivitySaved={handleActivitySaved}
           />
         )}
         {currentScreen === 'listening' && (
-          <ListeningSection cefrLevel={currentUser?.cefrLevel ?? null} />
+          <ListeningSection
+            cefrLevel={currentUser?.cefrLevel ?? null}
+            onActivitySaved={handleActivitySaved}
+          />
         )}
         {currentScreen === 'writing' && (
           <WritingSection
             initialActivityId={initialWritingActivityId}
             assignmentId={initialWritingAssignmentId}
+            onActivitySaved={handleActivitySaved}
           />
         )}
         {currentScreen === 'quiz' && (

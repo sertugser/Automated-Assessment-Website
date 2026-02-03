@@ -1062,19 +1062,21 @@ CRITICAL REQUIREMENTS:
 - Questions test: main idea, details, inference, vocabulary in context
 - Make each passage UNIQUE - vary the subject matter, setting, characters, and content
 
+EXPLANATION for each question (required, 2-4 sentences): Explain WHY the correct answer is correct by referring to the passage (e.g. "The passage states..."). If a wrong option is a common mistake, briefly say why it is wrong. Use simple language so the student understands their mistake. Never leave explanation empty or one-line.
+
 Return ONLY JSON (no markdown):
 {
   "passage": "Full reading text here - MUST be unique and topic-specific...",
   "questions": [
-    {"question": "...", "options": ["A", "B", "C", "D"], "correctAnswer": 0, "explanation": "...", "topic": "${topic || 'Reading Comprehension'}"}
+    {"question": "...", "options": ["A", "B", "C", "D"], "correctAnswer": 0, "explanation": "Detailed 2-4 sentence explanation referring to the passage, why correct is right and why key wrong options are wrong.", "topic": "${topic || 'Reading Comprehension'}"}
   ]
 }`;
 
   try {
-    const estimatedTokens = Math.min(questionCount * 150 + 500, 3000);
+    const estimatedTokens = Math.min(questionCount * 220 + 600, 3500);
     const response = await callAIWithBackup(
       prompt,
-      'Expert English teacher. Return JSON with passage and questions only.',
+      'Expert English teacher. Return JSON with passage and questions only. Write detailed explanations for each question.',
       estimatedTokens
     );
     const data = parseAIResponse(response);
@@ -1536,19 +1538,23 @@ Make sure the questions match the ${cefrLevel} level exactly. A ${cefrLevel} use
 Requirements:
 - Distribute correct answers evenly (0,1,2,3) - NOT all in option A
 - ${cefrLevel ? `Match ${cefrLevel} level exactly` : 'Match difficulty level'}
-- Different CEFR levels = different questions
+- 4 options per question. Vary correctAnswer (0-3) across questions.
+
+CRITICAL - EXPLANATION for each question MUST be detailed and student-friendly (2-4 sentences):
+1. State WHY the correct answer is correct, referring to the question or the rule.
+2. If a wrong option is a common mistake, briefly say WHY it is wrong (e.g. "X is wrong because...").
+3. Use simple language so a student can understand their mistake and learn. Do NOT give one-line or generic explanations.
+4. Never leave explanation empty or as a single definition without applying it to the question.
 
 Return ONLY JSON array (no markdown):
-[{"question":"...","options":["A","B","C","D"],"correctAnswer":0,"explanation":"...","topic":"${topic}"}]
-
-4 options per question. Vary correctAnswer (0-3) across questions.`;
+[{"question":"...","options":["A","B","C","D"],"correctAnswer":0,"explanation":"Detailed 2-4 sentence explanation: why correct is correct, why key wrong options are wrong, in simple language.","topic":"${topic}"}]`;
 
   try {
-    // Estimate max tokens needed: ~100 tokens per question + overhead
-    const estimatedTokens = Math.min(count * 120 + 200, 2000);
+    // More tokens for detailed explanations (2-4 sentences per question)
+    const estimatedTokens = Math.min(count * 200 + 300, 2500);
     const response = await callAIWithBackup(
       prompt, 
-      'Expert English teacher. Return valid JSON arrays only.',
+      'Expert English teacher. Return valid JSON arrays only. Write detailed, student-friendly explanations for each question.',
       estimatedTokens
     );
     const questions = parseAIResponse(response);
@@ -2571,6 +2577,131 @@ IMPORTANT: Make recommendations SPECIFIC to their weaknesses. If they scored 50%
   } catch (error) {
     console.error('Error generating recommendations:', error);
     return getDefaultRecommendations(userStats);
+  }
+};
+
+/** Quiz performance analysis result (AI-generated) */
+export interface QuizPerformanceAnalysis {
+  strongAreas: string;
+  areasForImprovement: string;
+  recommendation: string;
+}
+
+/**
+ * Generate detailed, real AI performance analysis for a completed quiz.
+ * Uses actual wrong answers, topics, explanations, and timing to produce personalized feedback.
+ */
+export const generateQuizPerformanceAnalysis = async (results: {
+  score: number;
+  totalQuestions: number;
+  correctAnswers: number;
+  timeSpent: number;
+  courseTitle: string;
+  questions?: Array<{
+    question: string;
+    options: string[];
+    correctAnswer: number;
+    explanation?: string;
+    topic?: string;
+  }>;
+  userAnswers?: (number | null)[];
+}): Promise<QuizPerformanceAnalysis> => {
+  const questions = results.questions || [];
+  const userAnswers = results.userAnswers || [];
+  const wrongDetails: Array<{ question: string; topic: string; userChoice: string; correctAnswer: string; explanation: string }> = [];
+  const correctTopics = new Map<string, number>();
+  const wrongTopics = new Map<string, number>();
+
+  questions.forEach((q, i) => {
+    const u = userAnswers[i];
+    const userOpt = u != null && q.options[u] != null ? q.options[u] : null;
+    const correctOpt = q.options[q.correctAnswer] ?? '';
+    const topic = q.topic || 'General';
+    if (u != null && u !== q.correctAnswer) {
+      wrongDetails.push({
+        question: q.question,
+        topic,
+        userChoice: userOpt ?? '(skipped)',
+        correctAnswer: correctOpt,
+        explanation: q.explanation || 'No explanation provided.',
+      });
+      wrongTopics.set(topic, (wrongTopics.get(topic) || 0) + 1);
+    } else if (u != null) {
+      correctTopics.set(topic, (correctTopics.get(topic) || 0) + 1);
+    }
+  });
+
+  const strongTopicsList = Array.from(correctTopics.entries()).filter(([, c]) => c >= 1).map(([t]) => t);
+  const weakTopicsList = Array.from(wrongTopics.entries()).map(([t, c]) => `${t} (${c} wrong)`);
+  const fallback = (): QuizPerformanceAnalysis => {
+    const strongAreas = strongTopicsList.length > 0
+      ? `You answered correctly in these areas: ${strongTopicsList.join(', ')} — ${results.correctAnswers} out of ${results.totalQuestions} questions. That shows you have a base in these topics; keep building on it by practicing similar questions and reviewing any explanations you found helpful.`
+      : results.score >= 70
+        ? `You got ${results.correctAnswers} out of ${results.totalQuestions} correct. Focus on the weak areas listed below and use the Question Review section to see why each answer was right or wrong.`
+        : `You completed the quiz. Below we highlight which topics need more work. Use the Question Review section to read each explanation and understand why the correct answers are right — that will help you improve next time.`;
+    const areasForImprovement = weakTopicsList.length > 0
+      ? `Topics to review: ${weakTopicsList.join(', ')}. You had ${wrongDetails.length} wrong answer(s) in total. For each of these topics, go through the wrong questions in the Question Review below and read the explanations. Practice similar concepts (e.g. same grammar rule or reading skill) before retrying the quiz.`
+      : results.score < 90
+        ? 'Review advanced topics and practice more challenging questions to reach mastery level. Use the Question Review section to understand each correct answer.'
+        : '';
+    const recommendation = results.score >= 90
+      ? 'You did well on this set. Try an advanced course or a harder topic to keep challenging yourself and solidify your skills.'
+      : weakTopicsList.length > 0
+        ? `Retry this quiz after reviewing: ${weakTopicsList.slice(0, 3).join(', ')}. Use the Question Review section to study each wrong answer and its explanation. Practice makes perfect!`
+        : 'Review the material and the Question Review section below, then retry to improve your score.';
+    return { strongAreas, areasForImprovement, recommendation };
+  };
+
+  if (!GROQ_API_KEY && !GEMINI_API_KEY) {
+    return fallback();
+  }
+
+  const avgTimePerQuestion = results.totalQuestions > 0 ? Math.round(results.timeSpent / results.totalQuestions) : 0;
+  const wrongSummary = wrongDetails.length > 0
+    ? wrongDetails.map((w, i) => `${i + 1}. [${w.topic}] Q: ${w.question}\n   User chose: ${w.userChoice}\n   Correct: ${w.correctAnswer}\n   Explanation: ${w.explanation}`).join('\n\n')
+    : 'None (all correct).';
+  const weakTopics = Array.from(wrongTopics.entries()).map(([t, c]) => `${t} (${c} wrong)`).join(', ') || 'None';
+  const strongTopics = Array.from(correctTopics.entries()).filter(([, c]) => c >= 1).map(([t]) => t).join(', ') || 'N/A';
+
+  const prompt = `You are an expert English assessment analyst. Analyze this quiz result and provide a DETAILED, personalized performance analysis. Be specific—reference actual topics, question types, and patterns from the data. Do NOT give generic advice.
+
+QUIZ DATA:
+- Course: ${results.courseTitle}
+- Score: ${results.score}% (${results.correctAnswers}/${results.totalQuestions} correct)
+- Time: ${results.timeSpent}s total, ~${avgTimePerQuestion}s per question
+- Topics where the user was STRONG (answered correctly): ${strongTopics}
+- Topics where the user was WEAK (wrong answers): ${weakTopics}
+
+WRONG ANSWERS (use these to be specific):
+${wrongSummary}
+
+IMPORTANT: Write 2-4 FULL SENTENCES for each field. Do NOT give one-line or very short answers. The student should read a real analysis.
+
+Return ONLY a JSON object with this exact structure (no markdown, no code blocks):
+{
+  "strongAreas": "2-4 sentences. Be SPECIFIC: which topics or question types did they get right? Mention pace/timing if relevant. Do not be generic.",
+  "areasForImprovement": "2-4 sentences. Be SPECIFIC: which topics or concepts did they miss? Reference the wrong answers and explanations. Give concrete next steps (e.g. 'Review prepositions in context' or 'Practice inference questions'). If they scored 100%, say they have mastered this set.",
+  "recommendation": "2-3 sentences. Personalized next step: retry same topic, try harder level, or move on. Reference their weak/strong topics."
+}`;
+
+  try {
+    const response = await callAIWithBackup(
+      prompt,
+      'Expert English assessment analyst. Return only valid JSON. You MUST write 2-4 full sentences per field; short one-line answers are not acceptable.',
+      2000
+    );
+    const parsed = parseAIResponse(response);
+    if (parsed && typeof parsed.strongAreas === 'string' && typeof parsed.areasForImprovement === 'string' && typeof parsed.recommendation === 'string') {
+      return {
+        strongAreas: parsed.strongAreas.trim(),
+        areasForImprovement: parsed.areasForImprovement.trim(),
+        recommendation: parsed.recommendation.trim(),
+      };
+    }
+    return fallback();
+  } catch (error) {
+    console.error('Error generating quiz performance analysis:', error);
+    return fallback();
   }
 };
 
