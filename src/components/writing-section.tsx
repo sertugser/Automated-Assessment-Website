@@ -123,6 +123,13 @@ export function WritingSection({ initialActivityId, assignmentId }: WritingSecti
   const [showAllGrammarErrors, setShowAllGrammarErrors] = useState(false);
   const editorRef = useRef<HTMLTextAreaElement | null>(null);
   const overlayRef = useRef<HTMLDivElement | null>(null);
+  const pasteBlockedToastId = 'writing-paste-blocked';
+
+  const blockPasteOrDrop = () => {
+    toast.error(t('writing.pasteDisabled'), {
+      id: pasteBlockedToastId,
+    });
+  };
 
   useEffect(() => {
     const updateStats = () => {
@@ -993,6 +1000,24 @@ export function WritingSection({ initialActivityId, assignmentId }: WritingSecti
                   ref={editorRef}
                   value={essayText}
                   onChange={(e) => handleTextChange(e.target.value)}
+                  onPaste={(e) => {
+                    e.preventDefault();
+                    blockPasteOrDrop();
+                  }}
+                  onDrop={(e) => {
+                    e.preventDefault();
+                    blockPasteOrDrop();
+                  }}
+                  onDragOver={(e) => {
+                    e.preventDefault();
+                  }}
+                  onBeforeInput={(e) => {
+                    const inputType = (e as unknown as InputEvent).inputType;
+                    if (inputType === 'insertFromPaste' || inputType === 'insertFromDrop') {
+                      e.preventDefault();
+                      blockPasteOrDrop();
+                    }
+                  }}
                   onScroll={() => {
                     if (overlayRef.current && editorRef.current) {
                       overlayRef.current.scrollTop = editorRef.current.scrollTop;

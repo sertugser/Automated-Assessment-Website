@@ -255,6 +255,7 @@ const en: Record<string, string> = {
   'writing.clearPrompt': 'Clear prompt',
   'writing.startTyping': 'Start typing freely or choose one of the prompts below as a starting point.',
   'writing.startWriting': 'Start writing your essay here or paste text from a file...',
+  'writing.pasteDisabled': 'Paste is disabled. Please type your text yourself.',
 
   'common.submit': 'Submit',
   'common.clear': 'Clear',
@@ -539,6 +540,7 @@ const tr: Record<string, string> = {
   'writing.clearPrompt': 'Konuyu temizle',
   'writing.startTyping': 'Serbestçe yazmaya başlayın veya aşağıdaki konulardan birini başlangıç noktası olarak seçin.',
   'writing.startWriting': 'Denemenizi buraya yazın veya bir dosyadan metin yapıştırın...',
+  'writing.pasteDisabled': 'Yapıştırma devre dışı. Lütfen metni kendiniz yazın.',
 
   'common.submit': 'Gönder',
   'common.clear': 'Temizle',
