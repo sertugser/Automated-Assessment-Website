@@ -871,19 +871,21 @@ export function ListeningSection({ cefrLevel, onActivitySaved, assignmentId, ini
         </div>
 
         <div className="space-y-6">
-          <motion.div
-            initial={{ opacity: 0, y: 16 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ delay: 0.2 }}
-            className="bg-white rounded-2xl p-6 border border-gray-200 shadow-lg"
-          >
-            <h3 className="text-lg font-bold text-gray-900 mb-3 flex items-center gap-2">
-              <BookOpen className="w-5 h-5 text-indigo-600" />
-              Transcript
-            </h3>
-            <p className="text-sm text-gray-700 whitespace-pre-line leading-relaxed">{exercise.text}</p>
-            <p className="text-xs text-gray-500 mt-3">You can read this if audio doesn't play, then answer the questions.</p>
-          </motion.div>
+          {submitted && (
+            <motion.div
+              initial={{ opacity: 0, y: 16 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ delay: 0.2 }}
+              className="bg-white rounded-2xl p-6 border border-gray-200 shadow-lg"
+            >
+              <h3 className="text-lg font-bold text-gray-900 mb-3 flex items-center gap-2">
+                <BookOpen className="w-5 h-5 text-indigo-600" />
+                Transcript
+              </h3>
+              <p className="text-sm text-gray-700 whitespace-pre-line leading-relaxed">{exercise.text}</p>
+              <p className="text-xs text-gray-500 mt-3">You can read this if audio doesn't play, then answer the questions.</p>
+            </motion.div>
+          )}
         </div>
       </div>
       )}
