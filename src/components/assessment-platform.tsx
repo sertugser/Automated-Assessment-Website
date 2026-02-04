@@ -906,7 +906,11 @@ export function AssessmentPlatform({ onBack, user }: AssessmentPlatformProps) {
                           className="flex-1 text-left"
                         >
                           <div className="text-sm font-semibold text-gray-900">
-                            {(n.kind || 'assignment') === 'feedback' ? t('nav.feedbackReceived') : t('nav.assignmentAssigned')}
+                            {(n.kind || 'assignment') === 'feedback' 
+                              ? t('nav.feedbackReceived') 
+                              : n.isUpdated 
+                                ? t('nav.assignmentUpdated') 
+                                : t('nav.assignmentAssigned')}
                           </div>
                           <div className="text-xs text-gray-600 truncate">{n.assignmentTitle}</div>
                           <div className="text-[11px] text-gray-400 mt-1">

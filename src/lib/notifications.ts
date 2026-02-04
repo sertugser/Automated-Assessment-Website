@@ -10,6 +10,7 @@ export interface AssignmentNotification {
   courseId?: string;
   createdAt: string;
   readAt?: string;
+  isUpdated?: boolean; // true if assignment was updated and reassigned
 }
 
 const NOTIFICATIONS_KEY = 'aafs_notifications';
@@ -29,6 +30,7 @@ export function addAssignmentNotifications(params: {
   assignmentType: AssignmentType;
   courseId?: string;
   studentIds: string[];
+  isUpdated?: boolean; // true if assignment was updated and reassigned
 }): void {
   const now = new Date().toISOString();
   const existing = getAllNotifications();
@@ -44,6 +46,7 @@ export function addAssignmentNotifications(params: {
       assignmentType: params.assignmentType,
       courseId: params.courseId,
       createdAt: now,
+      isUpdated: params.isUpdated || false,
     });
   }
 

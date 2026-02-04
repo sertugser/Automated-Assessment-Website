@@ -73,7 +73,6 @@ export function InstructorPlatform({ onBack, user }: InstructorPlatformProps) {
     description: '',
     type: 'writing' as AssignmentType,
     courseId: 'grammar-basics',
-    status: 'published' as AssignmentStatus,
     maxScore: 100,
     instructions: '',
   });
@@ -147,14 +146,15 @@ export function InstructorPlatform({ onBack, user }: InstructorPlatformProps) {
       title: formData.title,
       description: formData.description,
       type: formData.type,
-      courseId: formData.courseId,
+      courseId: formData.type === 'quiz' ? formData.courseId : undefined,
       instructorId,
-      status: formData.status,
-      maxScore: formData.maxScore,
+      status: 'published',
+      maxScore: 100,
       instructions: formData.instructions || undefined,
     });
     if (formCreateStudentIds.length > 0) {
-      assignToStudents(newAssignment.id, formCreateStudentIds, formCreateDueDate || undefined);
+      const dueDate = formCreateDueDate || new Date().toISOString().split('T')[0];
+      assignToStudents(newAssignment.id, formCreateStudentIds, dueDate);
       addStudentsToRoster(instructorId, formCreateStudentIds);
       addAssignmentNotifications({
         assignmentId: newAssignment.id,
@@ -166,7 +166,7 @@ export function InstructorPlatform({ onBack, user }: InstructorPlatformProps) {
     }
     refreshData();
     setShowCreateAssignment(false);
-    setFormData({ title: '', description: '', type: 'writing', courseId: 'grammar-basics', status: 'published', maxScore: 100, instructions: '' });
+    setFormData({ title: '', description: '', type: 'writing', courseId: 'grammar-basics', maxScore: 100, instructions: '' });
     setFormCreateStudentIds([]);
     setFormCreateDueDate('');
     setExpandAssignTo(false);
@@ -180,14 +180,14 @@ export function InstructorPlatform({ onBack, user }: InstructorPlatformProps) {
       title: formData.title,
       description: formData.description,
       type: formData.type,
-      courseId: formData.courseId,
-      status: formData.status,
-      maxScore: formData.maxScore,
+      courseId: formData.type === 'quiz' ? formData.courseId : editingAssignment.courseId,
+      status: editingAssignment.status,
+      maxScore: 100,
       instructions: formData.instructions || undefined,
     });
     refreshData();
     setEditingAssignment(null);
-    setFormData({ title: '', description: '', type: 'writing', courseId: 'grammar-basics', status: 'published', maxScore: 100, instructions: '' });
+    setFormData({ title: '', description: '', type: 'writing', courseId: 'grammar-basics', maxScore: 100, instructions: '' });
   };
 
   const handleDeleteAssignment = (id: string) => {
@@ -237,7 +237,12 @@ export function InstructorPlatform({ onBack, user }: InstructorPlatformProps) {
   };
 
   const handleAssignToStudents = (assignmentId: string, studentIds: string[], dueDate?: string) => {
-    assignToStudents(assignmentId, studentIds, dueDate || undefined);
+    const finalDueDate = dueDate || new Date().toISOString().split('T')[0];
+    // Check if assignment was previously assigned to any students
+    const previouslyAssigned = getAssignedStudents(assignmentId);
+    const isUpdated = previouslyAssigned.length > 0;
+    
+    assignToStudents(assignmentId, studentIds, finalDueDate);
     addStudentsToRoster(instructorId, studentIds);
     const assignment = getAssignmentById(assignmentId);
     if (assignment && studentIds.length > 0) {
@@ -247,6 +252,7 @@ export function InstructorPlatform({ onBack, user }: InstructorPlatformProps) {
         assignmentType: assignment.type,
         courseId: assignment.courseId,
         studentIds,
+        isUpdated,
       });
     }
     refreshData();
@@ -666,8 +672,7 @@ export function InstructorPlatform({ onBack, user }: InstructorPlatformProps) {
                             title: a.title,
                             description: a.description,
                             type: a.type,
-                            courseId: a.courseId,
-                            status: a.status,
+                            courseId: a.courseId || 'grammar-basics',
                             maxScore: a.maxScore,
                             instructions: a.instructions || '',
                           });
@@ -1023,43 +1028,20 @@ export function InstructorPlatform({ onBack, user }: InstructorPlatformProps) {
                       ))}
                     </select>
                   </div>
-                  <div>
-                    <label className="block text-xs font-medium text-gray-700 mb-1">{t('instructor.course')}</label>
-                    <select
-                      value={formData.courseId}
-                      onChange={(e) => setFormData(f => ({ ...f, courseId: e.target.value }))}
-                      className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg focus:border-indigo-500 focus:outline-none bg-white"
-                    >
-                      {COURSE_OPTIONS.map(c => (
-                        <option key={c.id} value={c.id}>{c.label}</option>
-                      ))}
-                    </select>
-                  </div>
-                </div>
-                <div className="grid grid-cols-2 gap-3">
-                  <div>
-                    <label className="block text-xs font-medium text-gray-700 mb-1">{t('instructor.maxScore')}</label>
-                    <input
-                      type="number"
-                      min={1}
-                      max={100}
-                      value={formData.maxScore}
-                      onChange={(e) => setFormData(f => ({ ...f, maxScore: +e.target.value }))}
-                      className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg focus:border-indigo-500 focus:outline-none"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-xs font-medium text-gray-700 mb-1">{t('instructor.status')}</label>
-                    <select
-                      value={formData.status}
-                      onChange={(e) => setFormData(f => ({ ...f, status: e.target.value as AssignmentStatus }))}
-                      className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg focus:border-indigo-500 focus:outline-none bg-white"
-                    >
-                      <option value="draft">{t('instructor.statusDraft')}</option>
-                      <option value="published">{t('instructor.statusPublished')}</option>
-                      <option value="archived">{t('instructor.statusArchived')}</option>
-                    </select>
-                  </div>
+                  {formData.type === 'quiz' && (
+                    <div>
+                      <label className="block text-xs font-medium text-gray-700 mb-1">{t('instructor.course')}</label>
+                      <select
+                        value={formData.courseId}
+                        onChange={(e) => setFormData(f => ({ ...f, courseId: e.target.value }))}
+                        className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg focus:border-indigo-500 focus:outline-none bg-white"
+                      >
+                        {COURSE_OPTIONS.map(c => (
+                          <option key={c.id} value={c.id}>{c.label}</option>
+                        ))}
+                      </select>
+                    </div>
+                  )}
                 </div>
 
                 {!editingAssignment && (
@@ -1087,6 +1069,7 @@ export function InstructorPlatform({ onBack, user }: InstructorPlatformProps) {
                             type="date"
                             value={formCreateDueDate}
                             onChange={(e) => setFormCreateDueDate(e.target.value)}
+                            min={new Date().toISOString().split('T')[0]}
                             className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg focus:border-indigo-500 focus:outline-none"
                           />
                         </div>
@@ -1232,6 +1215,7 @@ export function InstructorPlatform({ onBack, user }: InstructorPlatformProps) {
                 type="date"
                 value={assignDueDate}
                 onChange={(e) => setAssignDueDate(e.target.value)}
+                min={new Date().toISOString().split('T')[0]}
                 className="w-full px-3 py-2 border-2 border-gray-200 rounded-xl focus:border-indigo-600"
               />
             </div>
@@ -1281,7 +1265,7 @@ export function InstructorPlatform({ onBack, user }: InstructorPlatformProps) {
                   handleAssignToStudents(
                     assigningAssignment.id,
                     selectedStudentIds,
-                    assignDueDate || undefined
+                    assignDueDate
                   )
                 }
                 disabled={selectedStudentIds.length === 0}
