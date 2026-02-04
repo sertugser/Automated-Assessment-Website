@@ -1,7 +1,7 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { motion } from 'motion/react';
 import { FileText, Edit, Mic, Headphones, ChevronRight, Calendar } from 'lucide-react';
-import { getAssignmentsForStudent, getAssignment, getSubmissionsByStudent } from '../lib/assignments';
+import { getAssignmentsForStudent, getAssignment, getSubmissionsByStudent, type Submission } from '../lib/assignments';
 import { getCurrentUser } from '../lib/auth';
 import { useLanguage } from '../contexts/LanguageContext';
 
@@ -14,28 +14,61 @@ const TYPE_ICONS: Record<string, typeof FileText> = {
 
 interface HomeworkSectionProps {
   onStartAssignment: (assignmentId: string, type: string, courseId?: string) => void;
+  initialAssignmentId?: string | null;
 }
 
-export function HomeworkSection({ onStartAssignment }: HomeworkSectionProps) {
+export function HomeworkSection({ onStartAssignment, initialAssignmentId }: HomeworkSectionProps) {
   const { t } = useLanguage();
   const [assignments, setAssignments] = useState<ReturnType<typeof getAssignmentsForStudent>>([]);
+  const [submissions, setSubmissions] = useState<Submission[]>([]);
+  const [expandedAssignmentId, setExpandedAssignmentId] = useState<string | null>(null);
+  const [highlightedAssignmentId, setHighlightedAssignmentId] = useState<string | null>(null);
+  const cardRefs = useRef<Record<string, HTMLDivElement | null>>({});
 
   useEffect(() => {
-    const user = getCurrentUser();
-    if (user?.id) {
-      setAssignments(getAssignmentsForStudent(user.id));
-    }
+    const load = () => {
+      const user = getCurrentUser();
+      if (user?.id) {
+        setAssignments(getAssignmentsForStudent(user.id));
+        setSubmissions(getSubmissionsByStudent(user.id));
+      }
+    };
+    load();
+    const interval = setInterval(load, 2000);
+    window.addEventListener('storage', load);
+    return () => {
+      clearInterval(interval);
+      window.removeEventListener('storage', load);
+    };
   }, []);
 
-  const user = getCurrentUser();
-  const mySubmissions = user ? getSubmissionsByStudent(user.id) : [];
+  useEffect(() => {
+    if (initialAssignmentId) {
+      setExpandedAssignmentId(initialAssignmentId);
+      setHighlightedAssignmentId(initialAssignmentId);
+      const timeout = setTimeout(() => setHighlightedAssignmentId(null), 2500);
+      const target = cardRefs.current[initialAssignmentId];
+      if (target) {
+        setTimeout(() => {
+          target.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        }, 0);
+      }
+      return () => clearTimeout(timeout);
+    }
+  }, [initialAssignmentId]);
+
+  const mySubmissions = submissions;
 
   const assignedWithDetails = assignments
     .map((a) => {
       const assignment = getAssignment(a.assignmentId);
       if (!assignment || assignment.status !== 'published') return null;
-      const submitted = mySubmissions.some((s) => s.assignmentId === a.assignmentId);
-      return { ...a, assignment, submitted };
+      const submission = mySubmissions
+        .filter((s) => s.assignmentId === a.assignmentId)
+        .sort((left, right) => new Date(right.submittedAt).getTime() - new Date(left.submittedAt).getTime())[0];
+      const submitted = !!submission;
+      const reviewed = !!submission?.instructorFeedback || typeof submission?.instructorScore === 'number';
+      return { ...a, assignment, submitted, submission, reviewed };
     })
     .filter(Boolean) as Array<{
     assignmentId: string;
@@ -44,6 +77,8 @@ export function HomeworkSection({ onStartAssignment }: HomeworkSectionProps) {
     dueDate?: string;
     assignment: NonNullable<ReturnType<typeof getAssignment>>;
     submitted: boolean;
+    reviewed: boolean;
+    submission?: Submission;
   }>;
 
   if (assignedWithDetails.length === 0) {
@@ -90,10 +125,23 @@ export function HomeworkSection({ onStartAssignment }: HomeworkSectionProps) {
           return (
             <motion.div
               key={`${item.assignmentId}-${item.studentId}`}
+              ref={(el) => {
+                cardRefs.current[item.assignmentId] = el;
+              }}
               initial={{ opacity: 0, y: 20 }}
               animate={{ opacity: 1, y: 0 }}
               transition={{ delay: i * 0.05 }}
-              className="bg-white rounded-2xl p-5 border-2 border-gray-200 shadow-lg hover:border-indigo-200 transition-colors"
+              onClick={() => {
+                if (!item.reviewed) return;
+                setExpandedAssignmentId((prev) =>
+                  prev === item.assignmentId ? null : item.assignmentId
+                );
+              }}
+              className={`bg-white rounded-2xl p-5 border-2 shadow-lg transition-colors ${
+                highlightedAssignmentId === item.assignmentId
+                  ? 'border-indigo-400 ring-2 ring-indigo-200 bg-indigo-50/40'
+                  : 'border-gray-200 hover:border-indigo-200'
+              } ${item.reviewed ? 'cursor-pointer' : ''}`}
             >
               <div className="flex items-center justify-between gap-4">
                 <div className="flex items-center gap-4 flex-1 min-w-0">
@@ -115,7 +163,24 @@ export function HomeworkSection({ onStartAssignment }: HomeworkSectionProps) {
                   </div>
                 </div>
                 <div className="flex items-center gap-3 shrink-0">
-                  {item.submitted ? (
+                  {item.reviewed ? (
+                    <>
+                      <span className="px-3 py-1.5 bg-emerald-100 text-emerald-700 rounded-lg text-sm font-medium">
+                        {t('homework.reviewed')}
+                      </span>
+                      <button
+                        onClick={() =>
+                          setExpandedAssignmentId((prev) =>
+                            prev === item.assignmentId ? null : item.assignmentId
+                          )
+                        }
+                        onMouseDown={(e) => e.stopPropagation()}
+                        className="px-3 py-1.5 rounded-lg text-sm font-medium bg-emerald-600 text-white hover:bg-emerald-700"
+                      >
+                        {expandedAssignmentId === item.assignmentId ? t('homework.hideFeedback') : t('homework.viewFeedback')}
+                      </button>
+                    </>
+                  ) : item.submitted ? (
                     <span className="px-3 py-1.5 bg-green-100 text-green-700 rounded-lg text-sm font-medium">
                       {t('homework.submitted')}
                     </span>
@@ -128,6 +193,7 @@ export function HomeworkSection({ onStartAssignment }: HomeworkSectionProps) {
                           item.assignment.courseId
                         )
                       }
+                      onMouseDown={(e) => e.stopPropagation()}
                       className="flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-indigo-600 to-purple-600 text-white rounded-xl font-medium hover:shadow-lg transition-all"
                     >
                       {t('homework.start')}
@@ -136,6 +202,28 @@ export function HomeworkSection({ onStartAssignment }: HomeworkSectionProps) {
                   )}
                 </div>
               </div>
+              {item.reviewed && expandedAssignmentId === item.assignmentId && (
+                <div className="mt-4 border-t border-gray-100 pt-4">
+                  {typeof item.submission?.instructorScore === 'number' && (
+                    <p className="text-sm text-gray-700 mb-2">
+                      <span className="font-semibold text-gray-900">{t('homework.instructorScore')}:</span>{' '}
+                      {item.submission.instructorScore}%
+                    </p>
+                  )}
+                  {item.submission?.instructorFeedback ? (
+                    <p className="text-sm text-gray-700 whitespace-pre-wrap">
+                      {item.submission.instructorFeedback}
+                    </p>
+                  ) : (
+                    <p className="text-sm text-gray-600">{t('homework.noFeedbackYet')}</p>
+                  )}
+                  {item.submission?.reviewedAt && (
+                    <p className="text-xs text-gray-500 mt-2">
+                      {t('homework.reviewedAt')}: {new Date(item.submission.reviewedAt).toLocaleString()}
+                    </p>
+                  )}
+                </div>
+              )}
             </motion.div>
           );
         })}

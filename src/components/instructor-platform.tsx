@@ -24,7 +24,8 @@ import {
   type AssignmentStatus,
   type AIFeedback,
 } from '../lib/assignments';
-import { addAssignmentNotifications } from '../lib/notifications';
+import { addAssignmentNotifications, addFeedbackNotification } from '../lib/notifications';
+import { attachInstructorFeedbackToAssignmentActivity } from '../lib/user-progress';
 import { getClassAnalytics } from '../lib/analytics';
 import { getUsers, getCurrentUser } from '../lib/auth';
 import { useLanguage } from '../contexts/LanguageContext';
@@ -188,14 +189,34 @@ export function InstructorPlatform({ onBack, user }: InstructorPlatformProps) {
     instructorFeedback: string,
     editedAiFeedback?: AIFeedback
   ) => {
+    const reviewedAt = new Date().toISOString();
+    const submission = submissions.find(s => s.id === submissionId);
+    const assignment = submission ? getAssignmentById(submission.assignmentId) : undefined;
     const updates: Partial<Submission> = {
       instructorScore,
       instructorFeedback,
       status: 'reviewed',
-      reviewedAt: new Date().toISOString(),
+      reviewedAt,
     };
     if (editedAiFeedback) updates.aiFeedback = editedAiFeedback;
     updateSubmission(submissionId, updates);
+    if (submission && assignment) {
+      addFeedbackNotification({
+        assignmentId: assignment.id,
+        assignmentTitle: assignment.title,
+        assignmentType: assignment.type,
+        courseId: assignment.courseId,
+        studentId: submission.studentId,
+        reviewedAt,
+      });
+      attachInstructorFeedbackToAssignmentActivity({
+        userId: submission.studentId,
+        assignmentId: assignment.id,
+        instructorFeedback,
+        instructorScore,
+        reviewedAt,
+      });
+    }
     refreshData();
     setSelectedSubmission(null);
   };

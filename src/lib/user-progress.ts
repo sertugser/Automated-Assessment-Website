@@ -23,6 +23,8 @@ export interface UserActivity {
   id: string;
   userId?: string;
   type: 'quiz' | 'writing' | 'speaking' | 'listening';
+  assignmentId?: string;
+  submissionId?: string;
   score: number;
   date: string; // ISO date string
   courseId?: string;
@@ -62,6 +64,9 @@ export interface UserActivity {
     correct: string;
   }>;
   listeningUserAnswers?: Record<string, string>;
+  instructorFeedback?: string;
+  instructorScore?: number;
+  reviewedAt?: string;
 }
 
 export interface UserStats {
@@ -93,6 +98,45 @@ export const saveActivity = (activity: Omit<UserActivity, 'id' | 'date'>): void 
 
   // Update streak
   updateStreak(userId);
+};
+
+export const attachInstructorFeedbackToAssignmentActivity = (params: {
+  userId: string;
+  assignmentId: string;
+  instructorFeedback?: string;
+  instructorScore?: number;
+  reviewedAt?: string;
+}): boolean => {
+  const { userId, assignmentId, instructorFeedback, instructorScore, reviewedAt } = params;
+  if (!userId || !assignmentId) return false;
+
+  try {
+    const raw = localStorage.getItem(getStorageKey(userId));
+    const activities: UserActivity[] = raw ? JSON.parse(raw) : [];
+    if (!Array.isArray(activities) || activities.length === 0) return false;
+
+    let updated = false;
+    for (let i = activities.length - 1; i >= 0; i--) {
+      const activity = activities[i];
+      if (activity && activity.assignmentId === assignmentId) {
+        activities[i] = {
+          ...activity,
+          instructorFeedback: instructorFeedback ?? activity.instructorFeedback,
+          instructorScore: instructorScore ?? activity.instructorScore,
+          reviewedAt: reviewedAt ?? activity.reviewedAt ?? new Date().toISOString(),
+        };
+        updated = true;
+        break;
+      }
+    }
+
+    if (updated) {
+      localStorage.setItem(getStorageKey(userId), JSON.stringify(activities));
+    }
+    return updated;
+  } catch {
+    return false;
+  }
 };
 
 /**

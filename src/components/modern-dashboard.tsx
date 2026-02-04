@@ -212,22 +212,24 @@ export function ModernDashboard({ userName = 'Student', cefrLevel, recommendatio
               <span>{t('dashboard.loadingDifficulty')}</span>
             </div>
           ) : frequentMistakeRows.some(r => r.count > 0) ? (
-            <div className="bg-gradient-to-br from-pink-100 to-rose-200 rounded-xl border-2 border-pink-300 shadow-lg">
-              <ul className="divide-y divide-pink-300/80">
+            <div className="bg-gradient-to-br from-pink-100 to-rose-200 rounded-xl border-2 border-pink-300 shadow-lg p-4">
+              <div className="grid gap-3 sm:grid-cols-2">
                 {frequentMistakeRows.map((row) => (
-                  <li key={row.key} className="flex items-center gap-4 px-4 py-3 text-left rounded-lg border-2 border-transparent">
-                    <div className="p-2 rounded-lg shrink-0 bg-pink-200/90 text-rose-900">
-                      <span className="text-sm font-bold tabular-nums">{row.rank}</span>
+                  <div key={row.key} className="rounded-xl border border-pink-300/70 bg-white/80 px-4 py-3 shadow-sm">
+                    <div className="flex items-center justify-between gap-3">
+                      <div className="flex items-center gap-3 min-w-0">
+                        <div className="p-2 rounded-lg shrink-0 bg-pink-200/90 text-rose-900">
+                          <span className="text-sm font-bold tabular-nums">{row.rank}</span>
+                        </div>
+                        <p className="text-sm font-medium text-gray-900 truncate">{row.label}</p>
+                      </div>
+                      <span className="text-sm font-semibold shrink-0 text-rose-900">
+                        {row.count} {t('dashboard.timesSuffix')}
+                      </span>
                     </div>
-                    <div className="flex-1 min-w-0">
-                      <p className="text-sm font-medium text-gray-900">{row.label}</p>
-                    </div>
-                    <span className="text-sm font-semibold shrink-0 text-rose-900">
-                      {row.count} {t('dashboard.timesSuffix')}
-                    </span>
-                  </li>
+                  </div>
                 ))}
-              </ul>
+              </div>
             </div>
           ) : (
             <div className="bg-gradient-to-br from-pink-100 to-rose-200 rounded-xl border-2 border-pink-300 p-6 text-center text-rose-800 text-sm shadow-lg h-full min-h-[140px] flex items-center justify-center">

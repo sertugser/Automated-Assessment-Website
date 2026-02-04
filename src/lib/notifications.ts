@@ -2,6 +2,7 @@ import type { AssignmentType } from './assignments';
 
 export interface AssignmentNotification {
   id: string;
+  kind?: 'assignment' | 'feedback';
   studentId: string;
   assignmentId: string;
   assignmentTitle: string;
@@ -36,6 +37,7 @@ export function addAssignmentNotifications(params: {
   for (const studentId of params.studentIds) {
     next.push({
       id: `notif_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
+      kind: 'assignment',
       studentId,
       assignmentId: params.assignmentId,
       assignmentTitle: params.assignmentTitle,
@@ -44,6 +46,33 @@ export function addAssignmentNotifications(params: {
       createdAt: now,
     });
   }
+
+  setAllNotifications(next);
+}
+
+export function addFeedbackNotification(params: {
+  assignmentId: string;
+  assignmentTitle: string;
+  assignmentType: AssignmentType;
+  courseId?: string;
+  studentId: string;
+  reviewedAt?: string;
+}): void {
+  const now = params.reviewedAt || new Date().toISOString();
+  const existing = getAllNotifications();
+  const next = [
+    ...existing,
+    {
+      id: `notif_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
+      kind: 'feedback',
+      studentId: params.studentId,
+      assignmentId: params.assignmentId,
+      assignmentTitle: params.assignmentTitle,
+      assignmentType: params.assignmentType,
+      courseId: params.courseId,
+      createdAt: now,
+    },
+  ];
 
   setAllNotifications(next);
 }

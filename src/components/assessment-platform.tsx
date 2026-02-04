@@ -20,7 +20,7 @@ import { HomeworkSection } from './homework-section';
 import { type User as UserType, updateUser, getCurrentUser } from '../lib/auth';
 import { getUserStats, getRecentActivities, saveActivity, analyzeUserWeaknesses, getMistakeCountsByTopic, getWrongAnswerDetails, getActivitiesByType, getActivities, type UserActivity } from '../lib/user-progress';
 import { generatePersonalizedRecommendations, getLearningDifficultyAnalysis, getCommonMistakesAnalysis, generateQuizPerformanceAnalysis, type LearningDifficultyAnalysis, type CommonMistakeAnalysis } from '../lib/ai-services';
-import { getAssignment } from '../lib/assignments';
+import { createSubmission, getAssignment } from '../lib/assignments';
 import { getNotificationsForStudent, markNotificationRead, deleteNotification, markAllNotificationsRead, type AssignmentNotification } from '../lib/notifications';
 import { useLanguage } from '../contexts/LanguageContext';
 import logo from '../assets/fbaa49f59eaf54473f226d88f4a207918ca971f2.png';
@@ -96,6 +96,7 @@ export function AssessmentPlatform({ onBack, user }: AssessmentPlatformProps) {
   const [initialWritingAssignmentId, setInitialWritingAssignmentId] = useState<string | null>(null);
   const [initialQuizActivityId, setInitialQuizActivityId] = useState<string | null>(null);
   const [initialQuizAssignmentId, setInitialQuizAssignmentId] = useState<string | null>(null);
+  const [initialHomeworkAssignmentId, setInitialHomeworkAssignmentId] = useState<string | null>(null);
   const [resultsFromHistory, setResultsFromHistory] = useState(false);
   const [studyPlanHovered, setStudyPlanHovered] = useState(false);
   const [profileDropdownOpen, setProfileDropdownOpen] = useState(false);
@@ -183,6 +184,12 @@ export function AssessmentPlatform({ onBack, user }: AssessmentPlatformProps) {
   useEffect(() => {
     if (currentScreen !== 'speaking') {
       setInitialSpeakingAssignmentId(null);
+    }
+  }, [currentScreen]);
+
+  useEffect(() => {
+    if (currentScreen !== 'homework') {
+      setInitialHomeworkAssignmentId(null);
     }
   }, [currentScreen]);
 
@@ -556,6 +563,7 @@ export function AssessmentPlatform({ onBack, user }: AssessmentPlatformProps) {
         score: results.score,
         courseId: selectedCourse,
         courseTitle: results.courseTitle,
+        assignmentId: initialQuizAssignmentId || undefined,
         correctAnswers: results.correctAnswers,
         totalQuestions: results.totalQuestions,
         duration: results.timeSpent,
@@ -565,6 +573,19 @@ export function AssessmentPlatform({ onBack, user }: AssessmentPlatformProps) {
         quizReadingPassage: results.readingPassage,
         quizFeedback: feedback,
       });
+
+      if (initialQuizAssignmentId && currentUser?.id) {
+        const assignment = getAssignment(initialQuizAssignmentId);
+        createSubmission({
+          assignmentId: initialQuizAssignmentId,
+          studentId: currentUser.id,
+          studentName: currentUser.name,
+          status: 'completed',
+          content: assignment?.title ? `Completed quiz: ${assignment.title}` : 'Completed quiz',
+          aiScore: results.score,
+        });
+        setInitialQuizAssignmentId(null);
+      }
       handleActivitySaved();
       const newRecs = generateRecommendationsFromQuiz(results);
       if (newRecs.length > 0) {
@@ -640,6 +661,19 @@ export function AssessmentPlatform({ onBack, user }: AssessmentPlatformProps) {
     }
     refreshNotifications();
     setNotificationPanelOpen(false);
+
+    const kind = notif.kind || 'assignment';
+    if (kind === 'feedback') {
+      setInitialHomeworkAssignmentId(notif.assignmentId);
+      navigateToScreen('homework');
+      return;
+    }
+
+    if (kind === 'assignment') {
+      setInitialHomeworkAssignmentId(notif.assignmentId);
+      navigateToScreen('homework');
+      return;
+    }
 
     const assignment = getAssignment(notif.assignmentId);
     const type = notif.assignmentType || assignment?.type;
@@ -849,22 +883,22 @@ export function AssessmentPlatform({ onBack, user }: AssessmentPlatformProps) {
                       </div>
                     ) : (
                       <div className="max-h-80 overflow-y-auto divide-y divide-gray-100">
-                        {notifications.map((n) => (
-                          <div
-                            key={n.id}
-                            className={`flex items-start gap-3 px-4 py-3 ${n.readAt ? 'bg-white' : 'bg-indigo-50/40'}`}
-                          >
-                            <button
-                              type="button"
-                              onClick={() => handleOpenNotification(n)}
-                              className="flex-1 text-left"
-                            >
-                              <div className="text-sm font-semibold text-gray-900">
-                                {t('nav.assignmentAssigned')}
-                              </div>
-                              <div className="text-xs text-gray-600 truncate">{n.assignmentTitle}</div>
-                              <div className="text-[11px] text-gray-400 mt-1">
-                                {new Date(n.createdAt).toLocaleString()}
+                    {notifications.map((n) => (
+                      <div
+                        key={n.id}
+                        className={`flex items-start gap-3 px-4 py-3 ${n.readAt ? 'bg-white' : 'bg-indigo-50/40'}`}
+                      >
+                        <button
+                          type="button"
+                          onClick={() => handleOpenNotification(n)}
+                          className="flex-1 text-left"
+                        >
+                          <div className="text-sm font-semibold text-gray-900">
+                            {(n.kind || 'assignment') === 'feedback' ? t('nav.feedbackReceived') : t('nav.assignmentAssigned')}
+                          </div>
+                          <div className="text-xs text-gray-600 truncate">{n.assignmentTitle}</div>
+                          <div className="text-[11px] text-gray-400 mt-1">
+                            {new Date(n.createdAt).toLocaleString()}
                               </div>
                             </button>
                             <div className="flex flex-col gap-1 text-xs shrink-0">
@@ -1026,6 +1060,7 @@ export function AssessmentPlatform({ onBack, user }: AssessmentPlatformProps) {
         )}
         {currentScreen === 'homework' && (
           <HomeworkSection
+            initialAssignmentId={initialHomeworkAssignmentId}
             onStartAssignment={(assignmentId, type, courseId) => {
               if (type === 'writing') {
                 setInitialWritingAssignmentId(assignmentId);

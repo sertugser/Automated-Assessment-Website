@@ -22,7 +22,7 @@ import {
 } from '../lib/ai-services';
 import { saveActivity, getWritingStats, getActivitiesByType, getUserStats, getActivities } from '../lib/user-progress';
 import { getCurrentUser } from '../lib/auth';
-import { createSubmission, getAssignment } from '../lib/assignments';
+import { createSubmission, getAssignment, getSubmissionsByStudent } from '../lib/assignments';
 import { toast } from 'sonner';
 import { useLanguage } from '../contexts/LanguageContext';
 
@@ -122,6 +122,11 @@ export function WritingSection({ initialActivityId, assignmentId, onActivitySave
   const [originalEssayText, setOriginalEssayText] = useState<string | null>(null);
   const [analysisSourceText, setAnalysisSourceText] = useState<string>('');
   const [showAllGrammarErrors, setShowAllGrammarErrors] = useState(false);
+  const [instructorReview, setInstructorReview] = useState<{
+    score?: number;
+    feedback?: string;
+    reviewedAt?: string;
+  } | null>(null);
   const editorRef = useRef<HTMLTextAreaElement | null>(null);
   const overlayRef = useRef<HTMLDivElement | null>(null);
   const pasteBlockedToastId = 'writing-paste-blocked';
@@ -207,6 +212,19 @@ export function WritingSection({ initialActivityId, assignmentId, onActivitySave
     setOriginalEssayText(null);
     setAnalysisSourceText(text);
     handleTextChange(text);
+
+    const activityScore = (activity as any).instructorScore;
+    const activityFeedback = (activity as any).instructorFeedback;
+    const activityReviewedAt = (activity as any).reviewedAt;
+    if (activityFeedback || typeof activityScore === 'number') {
+      setInstructorReview({
+        score: typeof activityScore === 'number' ? activityScore : undefined,
+        feedback: activityFeedback,
+        reviewedAt: activityReviewedAt,
+      });
+    } else {
+      setInstructorReview(null);
+    }
   }, [initialActivityId]);
 
   // When coming from homework assignment, load assignment instructions
@@ -218,6 +236,37 @@ export function WritingSection({ initialActivityId, assignmentId, onActivitySave
       if (prompt) handleTextChange(prompt);
       setSelectedPrompt(null); // Use assignment, not a regular prompt
     }
+  }, [assignmentId]);
+
+  useEffect(() => {
+    if (!assignmentId) {
+      setInstructorReview(null);
+      return;
+    }
+
+    const loadReview = () => {
+      const user = getCurrentUser();
+      if (!user) return;
+      const submissions = getSubmissionsByStudent(user.id);
+      const submission = submissions.find((s) => s.assignmentId === assignmentId);
+      if (submission && (submission.instructorFeedback || typeof submission.instructorScore === 'number')) {
+        setInstructorReview({
+          score: typeof submission.instructorScore === 'number' ? submission.instructorScore : undefined,
+          feedback: submission.instructorFeedback,
+          reviewedAt: submission.reviewedAt,
+        });
+      } else {
+        setInstructorReview(null);
+      }
+    };
+
+    loadReview();
+    const interval = setInterval(loadReview, 2000);
+    window.addEventListener('storage', loadReview);
+    return () => {
+      clearInterval(interval);
+      window.removeEventListener('storage', loadReview);
+    };
   }, [assignmentId]);
 
   // Load writing prompts from AI
@@ -575,6 +624,7 @@ export function WritingSection({ initialActivityId, assignmentId, onActivitySave
         score: computedOverall,
         courseTitle,
         courseId: assignment?.courseId,
+        assignmentId: assignment?.id || assignmentId || undefined,
         wordCount: wordCount,
         essayText: essayText,
         correctedText: simpleGemini.corrected_text,
@@ -1109,6 +1159,39 @@ export function WritingSection({ initialActivityId, assignmentId, onActivitySave
           <div className="flex-1"></div>
 
           {/* AI Feedback kutusu sol kolona alındı (Tips/Includes ile yer değiştirdi) */}
+          {instructorReview && (
+            <motion.div
+              initial={{ opacity: 0, x: 20 }}
+              animate={{ opacity: 1, x: 0 }}
+              transition={{ delay: 0.15 }}
+              className="bg-gradient-to-br from-emerald-50 to-teal-50 rounded-2xl p-6 border-2 border-emerald-200 shadow-lg mb-4"
+            >
+              <div className="flex items-center justify-between mb-3">
+                <h3 className="text-xl font-bold text-gray-900">
+                  {t('homework.instructorFeedback')}
+                </h3>
+                {typeof instructorReview.score === 'number' && (
+                  <div className="text-2xl font-bold text-emerald-600">
+                    {instructorReview.score}%
+                  </div>
+                )}
+              </div>
+              {instructorReview.feedback ? (
+                <p className="text-sm text-gray-700 whitespace-pre-wrap">
+                  {instructorReview.feedback}
+                </p>
+              ) : (
+                <p className="text-sm text-gray-600">
+                  {t('homework.noFeedbackYet')}
+                </p>
+              )}
+              {instructorReview.reviewedAt && (
+                <p className="text-xs text-gray-500 mt-2">
+                  {t('homework.reviewedAt')}: {new Date(instructorReview.reviewedAt).toLocaleString()}
+                </p>
+              )}
+            </motion.div>
+          )}
           {showFeedback && feedback ? (
             <motion.div
               initial={{ opacity: 0, x: 20 }}

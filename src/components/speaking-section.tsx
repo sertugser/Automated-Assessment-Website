@@ -19,7 +19,7 @@ import {
 import { analyzeSpeaking, type AIFeedback, generatePersonalizedTips, generateSpeakingTopics } from '../lib/ai-services';
 import { saveActivity, getSpeakingStats, getActivitiesByType, getUserStats, getActivities } from '../lib/user-progress';
 import { getCurrentUser } from '../lib/auth';
-import { getAssignment } from '../lib/assignments';
+import { createSubmission, getAssignment } from '../lib/assignments';
 import { toast } from 'sonner';
 
 // Speaking topics are now generated dynamically by AI - no hard-coded data
@@ -487,9 +487,25 @@ export function SpeakingSection({ initialActivityId, assignmentId, onActivitySav
         score: computedOverall,
         courseTitle: assignment?.title || selectedTopicData?.title || 'Speaking Practice',
         courseId: assignment?.courseId,
+        assignmentId: assignment?.id || assignmentId || undefined,
         speakingTranscript: transcript,
         speakingFeedback: normalizedFeedback,
       });
+
+      if (assignmentId) {
+        const user = getCurrentUser();
+        if (user) {
+          createSubmission({
+            assignmentId,
+            studentId: user.id,
+            studentName: user.name,
+            status: 'completed',
+            content: assignment?.title ? `Completed speaking task: ${assignment.title}` : 'Completed speaking task',
+            aiScore: computedOverall,
+            aiFeedback: normalizedFeedback,
+          });
+        }
+      }
       onActivitySaved?.();
 
       toast.success(`Analysis complete! Score: ${computedOverall}%`);
