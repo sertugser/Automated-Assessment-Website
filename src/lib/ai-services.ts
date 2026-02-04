@@ -51,16 +51,24 @@ Analyze the student's text and return ONLY a compact JSON (no extra text, no mar
   "vocabulary": {
     "score": number(0-100),
     "suggestions": string[],
-    "levelAnalysis": string
+    "levelAnalysis": string,
+    "detailedAnalysis": string (2-3 sentences explaining vocabulary strengths and weaknesses),
+    "wordUsageExamples": [{"word": string, "context": string (the sentence where it appears), "suggestion": string (optional better word), "reason": string (why this word is good/bad)}],
+    "diversityAnalysis": string (1-2 sentences about word variety and repetition)
   },
   "coherence": {
     "score": number(0-100),
-    "feedback": string
+    "feedback": string,
+    "paragraphStructure": string (analysis of paragraph organization and logical flow),
+    "transitionsAnalysis": string (analysis of transition words and connections between ideas),
+    "flowAnalysis": string (analysis of sentence flow and readability),
+    "specificExamples": [{"issue": string, "location": string (e.g., "paragraph 2, sentence 3"), "suggestion": string}]
   },
   "strengths": string[],
   "improvements": string[]
 }
-For each grammar error, "suggestion" must use format: Use 'correct' instead of 'wrong'. Example: Use 'increases' instead of 'increase'.`;
+For each grammar error, "suggestion" must use format: Use 'correct' instead of 'wrong'. Example: Use 'increases' instead of 'increase'.
+Provide detailed, specific feedback for vocabulary and coherence sections.`;
 
 // Speaking Analysis Prompt (token-optimized)
 const SPEAKING_ANALYSIS_PROMPT = `You are an expert pronunciation and fluency teacher.
@@ -544,10 +552,17 @@ export const analyzeWriting = async (text: string): Promise<AIFeedback> => {
           score: 75,
           suggestions: [],
           levelAnalysis: 'Intermediate',
+          detailedAnalysis: 'Vocabulary usage shows intermediate level with room for improvement.',
+          wordUsageExamples: [],
+          diversityAnalysis: 'Some word repetition detected. Try using synonyms to enhance variety.',
         },
         coherence: {
           score: 75,
           feedback: 'Good overall structure. Consider adding more details and examples.',
+          paragraphStructure: 'Paragraphs are generally well-organized.',
+          transitionsAnalysis: 'Some transition words could improve flow between ideas.',
+          flowAnalysis: 'Sentence flow is adequate but could be smoother.',
+          specificExamples: [],
         },
         strengths: [],
         improvements: [],
@@ -561,14 +576,32 @@ export const analyzeWriting = async (text: string): Promise<AIFeedback> => {
         score: 75,
         errors: [],
       },
-      vocabulary: feedback.vocabulary || {
+      vocabulary: feedback.vocabulary ? {
+        ...feedback.vocabulary,
+        detailedAnalysis: feedback.vocabulary.detailedAnalysis || feedback.vocabulary.levelAnalysis,
+        wordUsageExamples: feedback.vocabulary.wordUsageExamples || [],
+        diversityAnalysis: feedback.vocabulary.diversityAnalysis || 'Word variety analysis not available.',
+      } : {
         score: 75,
         suggestions: [],
         levelAnalysis: 'Intermediate',
+        detailedAnalysis: 'Vocabulary usage shows intermediate level with room for improvement.',
+        wordUsageExamples: [],
+        diversityAnalysis: 'Some word repetition detected. Try using synonyms to enhance variety.',
       },
-      coherence: feedback.coherence || {
+      coherence: feedback.coherence ? {
+        ...feedback.coherence,
+        paragraphStructure: feedback.coherence.paragraphStructure || feedback.coherence.feedback,
+        transitionsAnalysis: feedback.coherence.transitionsAnalysis || 'Transition analysis not available.',
+        flowAnalysis: feedback.coherence.flowAnalysis || 'Flow analysis not available.',
+        specificExamples: feedback.coherence.specificExamples || [],
+      } : {
         score: 75,
         feedback: 'Good structure and flow.',
+        paragraphStructure: 'Paragraphs are generally well-organized.',
+        transitionsAnalysis: 'Some transition words could improve flow between ideas.',
+        flowAnalysis: 'Sentence flow is adequate but could be smoother.',
+        specificExamples: [],
       },
       strengths: feedback.strengths || [],
       improvements: feedback.improvements || [],

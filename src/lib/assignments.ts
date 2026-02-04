@@ -53,10 +53,26 @@ export interface AIFeedback {
     score: number;
     suggestions: string[];
     levelAnalysis: string;
+    detailedAnalysis?: string;
+    wordUsageExamples?: Array<{
+      word: string;
+      context: string;
+      suggestion?: string;
+      reason: string;
+    }>;
+    diversityAnalysis?: string;
   };
   coherence?: {
     score: number;
     feedback: string;
+    paragraphStructure?: string;
+    transitionsAnalysis?: string;
+    flowAnalysis?: string;
+    specificExamples?: Array<{
+      issue: string;
+      location: string;
+      suggestion: string;
+    }>;
   };
   pronunciation?: {
     score: number;

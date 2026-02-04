@@ -1,4 +1,4 @@
-import { useState, useRef, useCallback } from 'react';
+import { useState, useRef, useCallback, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { Trophy, Target, Clock, TrendingUp, RotateCcw, BookOpen, CheckCircle, XCircle, ChevronDown, ChevronUp } from 'lucide-react';
 import { QuizResult } from './assessment-platform';
@@ -38,6 +38,16 @@ export function ResultsScreen({ results, onRetry, onNewCourse, onBack }: Results
     const el = document.getElementById(`review-q-${idx}`);
     el?.scrollIntoView({ behavior: 'smooth', block: 'center' });
   }, []);
+
+  // Check if there are any True/False questions
+  const hasTrueFalseQuestions = questions.some(q => isTrueFalseQuestion(q));
+  
+  // Reset filter to 'all' if True/False filter is selected but no True/False questions exist
+  useEffect(() => {
+    if (reviewFilter === 'truefalse' && !hasTrueFalseQuestions) {
+      setReviewFilter('all');
+    }
+  }, [reviewFilter, hasTrueFalseQuestions]);
 
   const filteredQuestions = questions
     .map((q, i) => ({ q, origIdx: i }))
@@ -219,7 +229,7 @@ export function ResultsScreen({ results, onRetry, onNewCourse, onBack }: Results
                   </div>
                 )}
                 <div className="flex flex-wrap gap-2 mb-4">
-                  {(['all', 'wrong', 'correct', 'truefalse'] as const).map((filter) => (
+                  {(['all', 'wrong', 'correct', ...(hasTrueFalseQuestions ? ['truefalse'] : [])] as const).map((filter) => (
                     <button
                       key={filter}
                       type="button"

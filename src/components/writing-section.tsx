@@ -1441,9 +1441,48 @@ export function WritingSection({ initialActivityId, assignmentId, onActivitySave
                     <span className="font-bold text-gray-900">{feedback.vocabulary.score}%</span>
                   </div>
                   <div className="text-sm text-gray-600 mb-2">{feedback.vocabulary.levelAnalysis}</div>
+                  
+                  {/* Detailed Analysis */}
+                  {feedback.vocabulary.detailedAnalysis && (
+                    <div className="bg-indigo-50 border border-indigo-200 rounded-lg p-3 mb-3">
+                      <div className="font-semibold text-indigo-700 text-sm mb-2">Detailed Analysis:</div>
+                      <p className="text-sm text-gray-700 leading-relaxed">{feedback.vocabulary.detailedAnalysis}</p>
+                    </div>
+                  )}
+                  
+                  {/* Word Usage Examples */}
+                  {feedback.vocabulary.wordUsageExamples && feedback.vocabulary.wordUsageExamples.length > 0 && (
+                    <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 mb-3">
+                      <div className="font-semibold text-blue-700 text-sm mb-2">Word Usage Analysis:</div>
+                      <div className="space-y-3">
+                        {feedback.vocabulary.wordUsageExamples.map((example, idx) => (
+                          <div key={idx} className="bg-white rounded-lg p-2 border border-blue-100">
+                            <div className="flex items-start gap-2 mb-1">
+                              <span className="font-medium text-gray-900 text-sm">"{example.word}"</span>
+                              {example.suggestion && (
+                                <span className="text-xs text-gray-500">→ "{example.suggestion}"</span>
+                              )}
+                            </div>
+                            <div className="text-xs text-gray-600 italic mb-1">"{example.context}"</div>
+                            <div className="text-xs text-gray-700">{example.reason}</div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                  
+                  {/* Diversity Analysis */}
+                  {feedback.vocabulary.diversityAnalysis && (
+                    <div className="bg-purple-50 border border-purple-200 rounded-lg p-3 mb-3">
+                      <div className="font-semibold text-purple-700 text-sm mb-1">Word Diversity:</div>
+                      <p className="text-sm text-gray-700">{feedback.vocabulary.diversityAnalysis}</p>
+                    </div>
+                  )}
+                  
+                  {/* Suggestions */}
                   {feedback.vocabulary.suggestions.length > 0 && (
                     <div className="bg-blue-50 border border-blue-200 rounded-lg p-3">
-                      <div className="font-semibold text-blue-700 text-sm mb-1">Suggestions:</div>
+                      <div className="font-semibold text-blue-700 text-sm mb-1">Suggested Words:</div>
                       <ul className="text-sm text-gray-700 space-y-1">
                         {feedback.vocabulary.suggestions.map((suggestion, idx) => (
                           <li key={idx}>• {suggestion}</li>
@@ -1461,9 +1500,54 @@ export function WritingSection({ initialActivityId, assignmentId, onActivitySave
                     <span className="font-semibold text-gray-700">Coherence</span>
                     <span className="font-bold text-gray-900">{feedback.coherence.score}%</span>
                   </div>
-                  <div className="text-sm text-gray-700 bg-green-50 border border-green-200 rounded-lg p-3">
+                  
+                  {/* General Feedback */}
+                  <div className="text-sm text-gray-700 bg-green-50 border border-green-200 rounded-lg p-3 mb-3">
                     {feedback.coherence.feedback}
                   </div>
+                  
+                  {/* Paragraph Structure Analysis */}
+                  {feedback.coherence.paragraphStructure && (
+                    <div className="bg-indigo-50 border border-indigo-200 rounded-lg p-3 mb-3">
+                      <div className="font-semibold text-indigo-700 text-sm mb-2">Paragraph Structure:</div>
+                      <p className="text-sm text-gray-700 leading-relaxed">{feedback.coherence.paragraphStructure}</p>
+                    </div>
+                  )}
+                  
+                  {/* Transitions Analysis */}
+                  {feedback.coherence.transitionsAnalysis && (
+                    <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 mb-3">
+                      <div className="font-semibold text-blue-700 text-sm mb-2">Transitions & Connections:</div>
+                      <p className="text-sm text-gray-700 leading-relaxed">{feedback.coherence.transitionsAnalysis}</p>
+                    </div>
+                  )}
+                  
+                  {/* Flow Analysis */}
+                  {feedback.coherence.flowAnalysis && (
+                    <div className="bg-purple-50 border border-purple-200 rounded-lg p-3 mb-3">
+                      <div className="font-semibold text-purple-700 text-sm mb-2">Sentence Flow:</div>
+                      <p className="text-sm text-gray-700 leading-relaxed">{feedback.coherence.flowAnalysis}</p>
+                    </div>
+                  )}
+                  
+                  {/* Specific Examples */}
+                  {feedback.coherence.specificExamples && feedback.coherence.specificExamples.length > 0 && (
+                    <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-3">
+                      <div className="font-semibold text-yellow-700 text-sm mb-2">Specific Examples:</div>
+                      <div className="space-y-2">
+                        {feedback.coherence.specificExamples.map((example, idx) => (
+                          <div key={idx} className="bg-white rounded-lg p-2 border border-yellow-100">
+                            <div className="text-xs font-medium text-gray-900 mb-1">
+                              {example.location}: {example.issue}
+                            </div>
+                            <div className="text-xs text-gray-700">
+                              <span className="font-medium">Suggestion:</span> {example.suggestion}
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
                 </div>
               )}
 
