@@ -120,6 +120,7 @@ export function WritingSection({ initialActivityId, assignmentId, onActivitySave
   const [showGeminiResult, setShowGeminiResult] = useState(false);
   const [showCorrectedInEditor, setShowCorrectedInEditor] = useState(false);
   const [originalEssayText, setOriginalEssayText] = useState<string | null>(null);
+  const [correctedDisplayText, setCorrectedDisplayText] = useState<string | null>(null);
   const [analysisSourceText, setAnalysisSourceText] = useState<string>('');
   const [showAllGrammarErrors, setShowAllGrammarErrors] = useState(false);
   const [instructorReview, setInstructorReview] = useState<{
@@ -210,6 +211,7 @@ export function WritingSection({ initialActivityId, assignmentId, onActivitySave
 
     setShowCorrectedInEditor(false);
     setOriginalEssayText(null);
+    setCorrectedDisplayText(null);
     setAnalysisSourceText(text);
     handleTextChange(text);
 
@@ -340,42 +342,172 @@ export function WritingSection({ initialActivityId, assignmentId, onActivitySave
 
   const escapeRegExp = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 
+  // Use word boundary for single words to avoid "a" matching inside "London"
+  const isWordLike = (s: string) => /^[a-zA-Z0-9]+$/.test(s.trim());
+
+  // Build corrected text from errors when API returns same as original
+  // Önce uzun eşleşmeleri uygula (örn. "I go" sonra "go" - böylece "goodly" içindeki "good" yanlış değişmez)
+  // geminiResult.errors boşsa feedback.grammar suggestion'dan original/replacement çıkar
+  const getEffectiveErrors = (): Array<{ original: string; replacement: string }> => {
+    const fromSimple = (geminiResult?.errors || []).filter(
+      (e) => (e.original || '').trim() && (e.replacement || '').trim()
+    );
+    if (fromSimple.length > 0) {
+      return fromSimple.map((e) => ({ original: e.original.trim(), replacement: e.replacement.trim() }));
+    }
+    const parsed: Array<{ original: string; replacement: string }> = [];
+    for (const ge of feedback?.grammar?.errors || []) {
+      const sug = (ge.suggestion || '').trim();
+      const useInstead = sug.match(/Use\s+['"]([^'"]+)['"]\s+instead\s+of\s+['"]([^'"]+)['"]/i);
+      const replaceWith = sug.match(/Replace\s+['"]([^'"]+)['"]\s+with\s+['"]([^'"]+)['"]/i);
+      const changeTo = sug.match(/Change\s+['"]([^'"]+)['"]\s+to\s+['"]([^'"]+)['"]/i);
+      const shouldBe = sug.match(/['"]([^'"]+)['"]\s+should\s+be\s+['"]([^'"]+)['"]/i);
+      const useXForY = sug.match(/Use\s+['"]([^'"]+)['"]\s+for\s+['"]([^'"]+)['"]/i);
+      const incorrectCorrect = sug.match(/(?:Incorrect|Wrong):\s*['"]([^'"]+)['"].*?(?:Correct|Use):\s*['"]([^'"]+)['"]/i);
+      let orig = '';
+      let repl = '';
+      if (useInstead) {
+        repl = useInstead[1];
+        orig = useInstead[2];
+      } else if (replaceWith) {
+        orig = replaceWith[1];
+        repl = replaceWith[2];
+      } else if (changeTo) {
+        orig = changeTo[1];
+        repl = changeTo[2];
+      } else if (shouldBe) {
+        orig = shouldBe[1];
+        repl = shouldBe[2];
+      } else if (useXForY) {
+        repl = useXForY[1];
+        orig = useXForY[2];
+      } else if (incorrectCorrect) {
+        orig = incorrectCorrect[1];
+        repl = incorrectCorrect[2];
+      }
+      if (orig && repl && orig.toLowerCase() !== repl.toLowerCase()) {
+        parsed.push({ original: orig, replacement: repl });
+      }
+    }
+    return parsed;
+  };
+
+  const buildCorrectedFromErrors = (
+    original: string,
+    errors: Array<{ original: string; replacement: string }>
+  ): string => {
+    const valid = errors
+      .filter((e) => {
+        const o = (e.original || '').trim();
+        const r = (e.replacement || '').trim();
+        return o && r && o.toLowerCase() !== r.toLowerCase();
+      })
+      .sort((a, b) => (b.original?.length || 0) - (a.original?.length || 0)); // Uzundan kısaya
+    let result = original;
+    for (const e of valid) {
+      const orig = e.original.trim();
+      const repl = e.replacement.trim();
+      const useWordBoundary = isWordLike(orig);
+      const pattern = useWordBoundary
+        ? new RegExp('\\b' + escapeRegExp(orig) + '\\b', 'gi')
+        : new RegExp(escapeRegExp(orig), 'gi');
+      result = result.replace(pattern, repl);
+    }
+    return result;
+  };
+
   const renderTextWithHighlights = (
     text: string,
-    highlights: Array<{ needle: string; className: string }>
+    highlights: Array<{ needle: string; className: string }>,
+    positionRanges?: Array<{ start: number; end: number; className: string }>
   ) => {
     const source = text ?? '';
-    if (!source.trim() || !highlights?.length) return <span>{source}</span>;
+    if (!source.trim()) return <span>{source}</span>;
 
-    // Find non-overlapping ranges in order (best-effort)
     const ranges: Array<{ start: number; end: number; className: string }> = [];
-    let cursor = 0;
 
-    for (const h of highlights) {
-      const needle = (h.needle || '').trim();
-      if (!needle) continue;
+    // Add position-based ranges (from feedback.grammar with position)
+    if (positionRanges?.length) {
+      for (const pr of positionRanges) {
+        if (pr.start >= 0 && pr.end <= source.length && pr.start < pr.end) {
+          ranges.push(pr);
+        }
+      }
+    }
 
-      const regex = new RegExp(escapeRegExp(needle), 'i');
-      const slice = source.slice(cursor);
-      const match = slice.match(regex);
-      if (!match) continue;
+    // Normalize whitespace for flexible matching (AI may return slightly different spacing)
+    const normalizeForMatch = (s: string) => s.replace(/\s+/g, ' ').trim();
 
-      const start = cursor + (match.index ?? 0);
-      const end = start + needle.length;
+    // Add needle-based highlights (find all matches, sort by position)
+    if (highlights?.length) {
+      for (const h of highlights) {
+        const needle = (h.needle || '').trim();
+        if (!needle) continue;
 
-      const overlaps = ranges.some((r) => !(end <= r.start || start >= r.end));
-      if (overlaps) continue;
+        let found = false;
+        const escaped = escapeRegExp(needle);
+        // Word boundary for single words to avoid "a" matching inside "London", "was", etc.
+        const useWordBoundary = isWordLike(needle);
+        const pattern = useWordBoundary ? `\\b${escaped}\\b` : escaped;
+        const regex = new RegExp(pattern, 'gi');
+        let match: RegExpExecArray | null;
+        const needleLen = needle.length;
 
-      ranges.push({ start, end, className: h.className });
-      cursor = end;
+        while ((match = regex.exec(source)) !== null) {
+          found = true;
+          const start = match.index;
+          const end = start + (match[0].length || needleLen);
+          ranges.push({ start, end, className: h.className });
+        }
+
+        // If no match, try without word boundary (e.g. "don't" vs "dont")
+        if (!found && useWordBoundary) {
+          const regexNoBoundary = new RegExp(escaped, 'gi');
+          const m = source.match(regexNoBoundary);
+          if (m && m.index !== undefined) {
+            found = true;
+            ranges.push({
+              start: m.index,
+              end: m.index + m[0].length,
+              className: h.className,
+            });
+          }
+        }
+
+        // If no match, try normalized whitespace
+        if (!found) {
+          const normNeedle = normalizeForMatch(needle);
+          if (normNeedle) {
+            const normRegex = new RegExp(
+              escapeRegExp(normNeedle).replace(/\\ /g, '\\s+'),
+              'i'
+            );
+            const m = source.match(normRegex);
+            if (m && m.index !== undefined) {
+              ranges.push({
+                start: m.index,
+                end: m.index + m[0].length,
+                className: h.className,
+              });
+            }
+          }
+        }
+      }
     }
 
     if (ranges.length === 0) return <span>{source}</span>;
+
+    // Sort by position and remove overlaps (keep first)
     ranges.sort((a, b) => a.start - b.start);
+    const filtered: typeof ranges = [];
+    for (const r of ranges) {
+      const overlaps = filtered.some((f) => !(r.end <= f.start || r.start >= f.end));
+      if (!overlaps) filtered.push(r);
+    }
 
     const parts: Array<{ t: string; className?: string }> = [];
     let i = 0;
-    for (const r of ranges) {
+    for (const r of filtered) {
       if (i < r.start) parts.push({ t: source.slice(i, r.start) });
       parts.push({ t: source.slice(r.start, r.end), className: r.className });
       i = r.end;
@@ -385,7 +517,7 @@ export function WritingSection({ initialActivityId, assignmentId, onActivitySave
     return (
       <>
         {parts.map((p, idx) => (
-          <span key={idx} className={p.className}>
+          <span key={idx} className={p.className ?? ''}>
             {p.t}
           </span>
         ))}
@@ -569,6 +701,7 @@ export function WritingSection({ initialActivityId, assignmentId, onActivitySave
     setShowGeminiResult(false);
     setShowCorrectedInEditor(false);
     setOriginalEssayText(null);
+    setCorrectedDisplayText(null);
     setAnalysisSourceText(essayText);
     setShowAllGrammarErrors(false);
     
@@ -772,6 +905,7 @@ export function WritingSection({ initialActivityId, assignmentId, onActivitySave
 
     setShowCorrectedInEditor(false);
     setOriginalEssayText(null);
+    setCorrectedDisplayText(null);
     setAnalysisSourceText(text);
     handleTextChange(text);
   };
@@ -1026,21 +1160,38 @@ export function WritingSection({ initialActivityId, assignmentId, onActivitySave
                       type="button"
                       onClick={() => {
                         if (!geminiResult) return;
-                        if (showCorrectedInEditor) {
-                          // Geri dön: orijinal metni geri yükle
-                          if (originalEssayText !== null) {
-                            handleTextChange(originalEssayText);
+                        try {
+                          if (showCorrectedInEditor) {
+                            // Geri dön: orijinal metni geri yükle
+                            if (originalEssayText !== null) {
+                              handleTextChange(originalEssayText);
+                            }
+                            setShowCorrectedInEditor(false);
+                            setOriginalEssayText(null);
+                            setCorrectedDisplayText(null);
+                          } else {
+                            // View corrected: hatalı yerler giderilsin, düzeltilenler yeşil
+                            const origText = essayText;
+                            const apiCorrected = (geminiResult.corrected_text || '').trim();
+                            const errs = getEffectiveErrors();
+                            let correctedToShow = apiCorrected || origText;
+                            if (
+                              errs.length > 0 &&
+                              correctedToShow.trim() === origText.trim()
+                            ) {
+                              correctedToShow = buildCorrectedFromErrors(origText, errs);
+                            }
+                            setOriginalEssayText(origText);
+                            setCorrectedDisplayText(correctedToShow);
+                            handleTextChange(correctedToShow);
+                            setShowCorrectedInEditor(true);
                           }
-                          setShowCorrectedInEditor(false);
-                          setOriginalEssayText(null);
-                        } else {
-                          // İlk kez düzeltilmiş metni göster
-                          setOriginalEssayText(essayText);
-                          handleTextChange(geminiResult.corrected_text || essayText);
-                          setShowCorrectedInEditor(true);
+                        } catch (err) {
+                          console.error('View corrected text toggle error:', err);
+                          toast.error('Could not switch view. Please try again.');
                         }
                       }}
-                      className="px-3 py-1 rounded-full text-xs font-semibold border border-indigo-200 text-indigo-700 bg-indigo-50 hover:bg-indigo-100 transition-colors"
+                      className="px-3 py-1.5 rounded-full text-xs font-semibold border border-indigo-200 text-indigo-700 bg-indigo-50 hover:bg-indigo-100 transition-colors cursor-pointer"
                     >
                       {showCorrectedInEditor ? t('writing.viewOriginalText') : t('writing.viewCorrectedText')}
                     </button>
@@ -1092,19 +1243,42 @@ export function WritingSection({ initialActivityId, assignmentId, onActivitySave
                 {showFeedback && showGeminiResult && geminiResult && (
                   <div
                     ref={overlayRef}
-                    className="pointer-events-none absolute inset-0 p-4 rounded-xl whitespace-pre-wrap overflow-y-scroll scrollbar-visible text-gray-900"
+                    className="pointer-events-none absolute inset-0 p-4 rounded-xl whitespace-pre-wrap overflow-y-auto scrollbar-visible text-gray-900 z-10 text-base leading-relaxed select-none"
                   >
-                    {renderTextWithHighlights(
-                      showCorrectedInEditor ? essayText : (analysisSourceText || essayText),
-                      (geminiResult.errors || []).flatMap((e) => {
-                        // Original view: highlight wrong parts in red
-                        if (!showCorrectedInEditor) {
-                          return [{ needle: e.original, className: 'text-red-600 font-semibold' }];
+                    {(() => {
+                      const displayText = showCorrectedInEditor
+                        ? (correctedDisplayText ?? essayText)
+                        : (analysisSourceText || essayText);
+                      const errors = getEffectiveErrors();
+                      let highlights: Array<{ needle: string; className: string }> = [];
+                      let positionRanges: Array<{ start: number; end: number; className: string }> | undefined;
+
+                      if (!showCorrectedInEditor) {
+                        // Orijinal görünüm: tespit edilen hatalı kelimeler KIRMIZI (Your Essay'de)
+                        highlights = errors.map((e) => ({
+                          needle: e.original.trim(),
+                          className: 'text-red-700 font-bold bg-red-100',
+                        }));
+                        // Fallback: feedback.grammar position (errors hâlâ boşsa)
+                        if (highlights.length === 0 && feedback?.grammar?.errors?.length) {
+                          positionRanges = feedback.grammar.errors
+                            .filter((err) => err.position && typeof err.position.start === 'number' && typeof err.position.end === 'number')
+                            .map((err) => ({
+                              start: err.position!.start,
+                              end: Math.min(err.position!.end, displayText.length),
+                              className: 'text-red-700 font-bold bg-red-100',
+                            }));
                         }
-                        // Corrected view: highlight the corrected replacement in green
-                        return [{ needle: e.replacement, className: 'text-green-600 font-semibold' }];
-                      })
-                    )}
+                      } else {
+                        // View corrected: hatalı kelimeler doğruları ile değiştirildi, değiştirilen yerler YEŞİL yazı rengi
+                        highlights = errors.map((e) => ({
+                          needle: e.replacement.trim(),
+                          className: 'text-green-700 font-bold',
+                        }));
+                      }
+
+                      return renderTextWithHighlights(displayText, highlights, positionRanges);
+                    })()}
                   </div>
                 )}
               </div>
@@ -1146,6 +1320,7 @@ export function WritingSection({ initialActivityId, assignmentId, onActivitySave
                   setShowAllGrammarErrors(false);
                   setShowCorrectedInEditor(false);
                   setOriginalEssayText(null);
+                  setCorrectedDisplayText(null);
                   setAnalysisSourceText('');
                   setIsExtractingText(false);
                 }}

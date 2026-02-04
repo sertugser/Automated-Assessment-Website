@@ -59,7 +59,8 @@ Analyze the student's text and return ONLY a compact JSON (no extra text, no mar
   },
   "strengths": string[],
   "improvements": string[]
-}.`;
+}
+For each grammar error, "suggestion" must use format: Use 'correct' instead of 'wrong'. Example: Use 'increases' instead of 'increase'.`;
 
 // Speaking Analysis Prompt (token-optimized)
 const SPEAKING_ANALYSIS_PROMPT = `You are an expert pronunciation and fluency teacher.
@@ -95,16 +96,21 @@ Analyze the speaking transcript and return ONLY a JSON object (no extra text, no
 const WRITING_CORRECTION_PROMPT = `You are an expert English teacher.
 Correct the student's text and return ONLY a JSON object (no extra text, no markdown) with this exact structure:
 {
-  "corrected_text": string,           // fully corrected version
+  "corrected_text": string,
   "score": number(0-100),
   "errors": [
     {
-      "original": string,             // incorrect phrase
-      "replacement": string,          // corrected phrase
-      "explanation": string           // short explanation in simple English
+      "original": string,
+      "replacement": string,
+      "explanation": string
     }
   ]
-}.`;
+}
+
+CRITICAL: For each grammar/spelling error in the student's text:
+- "original" MUST be the exact incorrect phrase as it appears in the student's text (copy it verbatim).
+- "replacement" MUST be the exact corrected phrase as it appears in your corrected_text.
+- Include ALL errors found. The original and replacement strings will be used to highlight errors (red) and corrections (green) in the text.`;
 
 export interface SimpleWritingAnalysisError {
   original: string;
