@@ -82,6 +82,7 @@ export function InstructorPlatform({ onBack, user }: InstructorPlatformProps) {
   const [expandAssignTo, setExpandAssignTo] = useState(false);
   const [assignAllCreate, setAssignAllCreate] = useState(false);
   const [assignAllModal, setAssignAllModal] = useState(false);
+  const [selectedStudentForDetail, setSelectedStudentForDetail] = useState<any>(null);
 
   const instructorId = user?.id || '';
 
@@ -127,11 +128,15 @@ export function InstructorPlatform({ onBack, user }: InstructorPlatformProps) {
         .map(s => s.instructorScore ?? s.aiScore ?? s.aiFeedback?.overallScore ?? 0)
         .filter(score => score > 0);
       
-      if (scores.length === 0) return 0;
+      if (scores.length === 0) return null; // null dönüyoruz, skor yok demek
       return scores.reduce((sum, score) => sum + score, 0) / scores.length;
     });
     
-    const totalAverage = studentAverages.reduce((sum, avg) => sum + avg, 0) / students.length;
+    // Sadece skor olan öğrencilerin ortalamasını al
+    const validAverages = studentAverages.filter(avg => avg !== null) as number[];
+    if (validAverages.length === 0) return 0;
+    
+    const totalAverage = validAverages.reduce((sum, avg) => sum + avg, 0) / validAverages.length;
     return Math.round(totalAverage);
   })();
 
@@ -483,7 +488,7 @@ export function InstructorPlatform({ onBack, user }: InstructorPlatformProps) {
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                   <button
                     onClick={() => setShowCreateAssignment(true)}
-                    className="flex items-center justify-center gap-2 rounded-xl bg-white/20 text-white py-3 font-semibold hover:bg-white/30 transition-colors"
+                    className="flex items-center justify-center gap-2 rounded-xl bg-white/20 text-white py-3 font-semibold hover:bg-white/40 hover:shadow-lg hover:scale-105 transition-all duration-200 cursor-pointer"
                   >
                     <Plus className="w-4 h-4" />
                     Create Assignment
@@ -493,7 +498,7 @@ export function InstructorPlatform({ onBack, user }: InstructorPlatformProps) {
                       setShowAddStudents(true);
                       setRosterStudentIds([]);
                     }}
-                    className="flex items-center justify-center gap-2 rounded-xl bg-white/20 text-white py-3 font-semibold hover:bg-white/30 transition-colors"
+                    className="flex items-center justify-center gap-2 rounded-xl bg-white/20 text-white py-3 font-semibold hover:bg-white/40 hover:shadow-lg hover:scale-105 transition-all duration-200 cursor-pointer"
                   >
                     <Users className="w-4 h-4" />
                     Add Students
@@ -798,12 +803,14 @@ export function InstructorPlatform({ onBack, user }: InstructorPlatformProps) {
             ) : (
               <div className="grid gap-4">
                 {rosterStudents.map((s, i) => (
-                  <motion.div
+                  <motion.button
                     key={s.id}
+                    type="button"
+                    onClick={() => setSelectedStudentForDetail(s)}
                     initial={{ opacity: 0, y: 20 }}
                     animate={{ opacity: 1, y: 0 }}
                     transition={{ delay: i * 0.03 }}
-                    className="bg-white rounded-2xl p-5 border-2 border-gray-200 shadow-lg flex items-center justify-between hover:border-indigo-200 transition-colors"
+                    className="w-full text-left bg-white rounded-2xl p-5 border-2 border-gray-200 shadow-lg flex items-center justify-between hover:border-indigo-400 hover:shadow-xl hover:bg-indigo-50/20 transition-all duration-200 cursor-pointer"
                   >
                     <div className="flex items-center gap-3">
                       <div className="w-10 h-10 rounded-full bg-gradient-to-br from-indigo-500 to-purple-600 flex items-center justify-center text-white font-semibold text-sm">
@@ -822,7 +829,7 @@ export function InstructorPlatform({ onBack, user }: InstructorPlatformProps) {
                     <span className="text-sm font-medium text-indigo-600">
                       {submissions.filter(sub => sub.studentId === s.id).length} {t('instructor.submissionsCount')}
                     </span>
-                  </motion.div>
+                  </motion.button>
                 ))}
               </div>
             )}
@@ -838,6 +845,115 @@ export function InstructorPlatform({ onBack, user }: InstructorPlatformProps) {
           />
         )}
       </main>
+
+      {/* Student Detail Modal */}
+      {selectedStudentForDetail && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+          <div
+            className="bg-white rounded-2xl shadow-xl max-w-2xl w-full max-h-[90vh] overflow-y-auto"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="sticky top-0 bg-gradient-to-r from-indigo-600 to-purple-600 text-white p-6 flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <div className="w-12 h-12 rounded-full bg-white/20 flex items-center justify-center text-lg font-bold">
+                  {selectedStudentForDetail.name.charAt(0).toUpperCase()}
+                </div>
+                <div>
+                  <h2 className="text-xl font-bold">{selectedStudentForDetail.name}</h2>
+                  <p className="text-white/80 text-sm">{selectedStudentForDetail.email}</p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setSelectedStudentForDetail(null)}
+                className="text-white/80 hover:text-white transition-colors text-2xl"
+              >
+                ✕
+              </button>
+            </div>
+
+            <div className="p-6 space-y-6">
+              <div className="grid grid-cols-3 gap-4">
+                <div className="bg-indigo-50 rounded-xl p-4 text-center border border-indigo-200">
+                  <div className="text-2xl font-bold text-indigo-600">
+                    {submissions.filter(s => s.studentId === selectedStudentForDetail.id).length}
+                  </div>
+                  <p className="text-xs text-gray-600 mt-1">Total Submissions</p>
+                </div>
+                <div className="bg-purple-50 rounded-xl p-4 text-center border border-purple-200">
+                  <div className="text-2xl font-bold text-purple-600">
+                    {selectedStudentForDetail.cefrLevel || '—'}
+                  </div>
+                  <p className="text-xs text-gray-600 mt-1">Level (CEFR)</p>
+                </div>
+                <div className="bg-green-50 rounded-xl p-4 text-center border border-green-200">
+                  <div className="text-2xl font-bold text-green-600">
+                    {Math.round(
+                      submissions
+                        .filter(s => s.studentId === selectedStudentForDetail.id)
+                        .map(s => s.instructorScore ?? s.aiScore ?? 0)
+                        .reduce((a, b) => a + b, 0) /
+                        (submissions.filter(s => s.studentId === selectedStudentForDetail.id).length || 1)
+                    )}%
+                  </div>
+                  <p className="text-xs text-gray-600 mt-1">Ortalama skor</p>
+                </div>
+              </div>
+
+              <div>
+                <h3 className="text-lg font-bold text-gray-900 mb-4">Submissions</h3>
+                <div className="space-y-3">
+                  {submissions
+                    .filter(s => s.studentId === selectedStudentForDetail.id)
+                    .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())
+                    .map(sub => (
+                      <div key={sub.id} className="bg-gray-50 border border-gray-200 rounded-xl p-4">
+                        <div className="flex items-center justify-between mb-2">
+                          <p className="font-semibold text-gray-900">{sub.content}</p>
+                          <div className="flex items-center gap-2">
+                            {sub.instructorScore && (
+                              <span className="px-3 py-1 rounded-full bg-green-100 text-green-700 text-sm font-semibold">
+                                {sub.instructorScore}%
+                              </span>
+                            )}
+                            {sub.aiScore && !sub.instructorScore && (
+                              <span className="px-3 py-1 rounded-full bg-blue-100 text-blue-700 text-sm font-semibold">
+                                AI: {sub.aiScore}%
+                              </span>
+                            )}
+                            {!sub.instructorScore && !sub.aiScore && (
+                              <span className="px-3 py-1 rounded-full bg-yellow-100 text-yellow-700 text-sm font-semibold">
+                                Pending
+                              </span>
+                            )}
+                          </div>
+                        </div>
+                        <p className="text-xs text-gray-500">{new Date(sub.date).toLocaleString()}</p>
+                        {sub.instructorFeedback && (
+                          <div className="mt-2 p-2 bg-white border border-indigo-200 rounded-lg text-sm text-gray-700">
+                            <span className="font-semibold text-indigo-600">Feedback: </span>
+                            {sub.instructorFeedback}
+                          </div>
+                        )}
+                      </div>
+                    ))}
+                  {submissions.filter(s => s.studentId === selectedStudentForDetail.id).length === 0 && (
+                    <p className="text-center text-gray-500 py-6">No submissions yet</p>
+                  )}
+                </div>
+              </div>
+
+              <button
+                type="button"
+                onClick={() => setSelectedStudentForDetail(null)}
+                className="w-full py-2.5 bg-indigo-600 text-white rounded-xl font-semibold hover:bg-indigo-700 transition-colors"
+              >
+                Close
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Create/Edit Assignment Modal */}
       {(showCreateAssignment || editingAssignment) && (
