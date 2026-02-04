@@ -218,6 +218,8 @@ export function ListeningSection({ cefrLevel, onActivitySaved, assignmentId, ini
   const [loadingQuestions, setLoadingQuestions] = useState(false);
   const [questionsError, setQuestionsError] = useState<string | null>(null);
   const [questionsRetryToken, setQuestionsRetryToken] = useState(0);
+  const [questionTips, setQuestionTips] = useState<Record<string, string>>({});
+  const [loadingTips, setLoadingTips] = useState(false);
 
   const exercisesForLevel = EXERCISES_BY_LEVEL[selectedLevel];
   const exercise = selectedExerciseId
@@ -481,6 +483,83 @@ export function ListeningSection({ cefrLevel, onActivitySaved, assignmentId, ini
     return { correctCount, total };
   }, [exercise, answers, questions]);
 
+  const generateAITipsForIncorrectAnswers = async () => {
+    const incorrectQuestions = questions.filter(q => answers[q.id] !== q.correct);
+    if (incorrectQuestions.length === 0) return;
+
+    setLoadingTips(true);
+    const GROQ_API_KEY = (import.meta.env.VITE_GROQ_API_KEY || '').trim().replace(/^["']|["']$/g, '');
+    
+    if (!GROQ_API_KEY) {
+      // Fallback to predefined tips if no API key
+      const fallbackTips: Record<string, string> = {};
+      const templates = [
+        "Focus on key verbs and action words in the audio.",
+        "Listen for specific details like times, places, or names.",
+        "Pay attention to prepositions - they indicate location.",
+        "The answer is often at the beginning or end.",
+        "Listen for transition words like 'but' or 'however'.",
+        "Focus on who is doing the action.",
+        "Similar-sounding options can be tricky.",
+        "The speaker often rephrases the answer.",
+        "Listen for contrasts - 'not', 'don't', or 'never'.",
+        "Keywords from the question often appear in audio."
+      ];
+      incorrectQuestions.forEach((q, i) => {
+        fallbackTips[q.id] = templates[i % templates.length];
+      });
+      setQuestionTips(fallbackTips);
+      setLoadingTips(false);
+      return;
+    }
+
+    // Generate AI tips for each incorrect question
+    for (const q of incorrectQuestions) {
+      try {
+        const prompt = `You are an expert English listening teacher. A student answered incorrectly.
+
+Question: "${q.question}"
+Student's wrong answer: "${answers[q.id]}"
+Correct answer: "${q.correct}"
+Context: "${exercise?.text.substring(0, 200)}..."
+
+Provide ONE very short tip (max 12 words) to help them understand their mistake. Focus on listening strategies.
+
+Return ONLY the tip text, nothing else.`;
+
+        const response = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${GROQ_API_KEY}`,
+          },
+          body: JSON.stringify({
+            model: 'llama-3.3-70b-versatile',
+            messages: [
+              { role: 'system', content: 'Expert English teacher. Return only the tip text, no quotes.' },
+              { role: 'user', content: prompt }
+            ],
+            temperature: 0.8,
+            max_tokens: 50,
+          }),
+        });
+
+        if (response.ok) {
+          const data = await response.json();
+          const tip = data.choices[0].message.content.trim().replace(/^["']|["']$/g, '');
+          setQuestionTips(prev => ({ ...prev, [q.id]: tip }));
+        } else {
+          // Fallback for this specific question
+          setQuestionTips(prev => ({ ...prev, [q.id]: 'Listen carefully for keywords related to this question.' }));
+        }
+      } catch (error) {
+        console.error('Error generating tip:', error);
+        setQuestionTips(prev => ({ ...prev, [q.id]: 'Listen to the audio again and focus on context.' }));
+      }
+    }
+    setLoadingTips(false);
+  };
+
   const handleCheckAnswers = () => {
     if (submitted) return;
     setSubmitted(true);
@@ -514,6 +593,9 @@ export function ListeningSection({ cefrLevel, onActivitySaved, assignmentId, ini
       }
     }
     onActivitySaved?.();
+    
+    // Generate AI tips for incorrect answers
+    generateAITipsForIncorrectAnswers();
   };
 
   const hasTTS = typeof window !== 'undefined' && 'speechSynthesis' in window;
@@ -772,102 +854,6 @@ export function ListeningSection({ cefrLevel, onActivitySaved, assignmentId, ini
             </div>
           </motion.div>
 
-          {/* Results & Analysis - Only show after submission */}
-          {submitted && (
-            <motion.div
-              initial={{ opacity: 0, y: 16 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ delay: 0.15 }}
-              className="bg-gradient-to-br from-indigo-50 to-purple-50 rounded-2xl p-6 border-2 border-indigo-200 shadow-lg"
-            >
-              <div className="flex items-center justify-between mb-4">
-                <h3 className="text-xl font-bold text-gray-900 flex items-center gap-2">
-                  <Sparkles className="w-5 h-5 text-indigo-600" />
-                  Results & Analysis
-                </h3>
-                <div className="text-3xl font-bold text-indigo-600">
-                  {score.total > 0 ? Math.round((score.correctCount / score.total) * 100) : 0}%
-                </div>
-              </div>
-
-              {/* Summary */}
-              <div className="mb-4">
-                <div className="flex items-center justify-between mb-2">
-                  <span className="font-semibold text-gray-700">Summary</span>
-                  <span className="font-bold text-gray-900">{score.correctCount}/{score.total} Correct</span>
-                </div>
-                <div className="bg-white border border-gray-200 rounded-lg p-3">
-                  <div className="text-sm text-gray-700">
-                    You answered {score.correctCount} out of {score.total} questions correctly.
-                    {score.correctCount === score.total && " Perfect score! 🎉"}
-                    {score.correctCount < score.total && score.correctCount >= score.total * 0.7 && " Great job! Keep practicing."}
-                    {score.correctCount < score.total * 0.7 && " Keep practicing to improve your score."}
-                  </div>
-                </div>
-              </div>
-
-              {/* Wrong Answers */}
-              {questions.some(q => answers[q.id] !== q.correct) && (
-                <div className="mb-4">
-                  <div className="flex items-center justify-between mb-2">
-                    <span className="font-semibold text-gray-700 flex items-center gap-2">
-                      <XCircle className="w-4 h-4 text-red-600" />
-                      Incorrect Answers
-                    </span>
-                    <span className="text-xs text-gray-500">
-                      {questions.filter(q => answers[q.id] !== q.correct).length} mistake(s)
-                    </span>
-                  </div>
-                  <div className="space-y-3">
-                    {questions.map((q, idx) => {
-                      if (answers[q.id] === q.correct) return null;
-                      return (
-                        <div key={q.id} className="bg-red-50 border border-red-200 rounded-lg p-3">
-                          <div className="font-semibold text-red-700 text-sm mb-2">Question {idx + 1}</div>
-                          <div className="text-sm text-gray-700 mb-2">{q.question}</div>
-                          <div className="space-y-1">
-                            <div className="text-sm">
-                              <span className="font-semibold text-red-600">Your answer:</span>
-                              <span className="text-gray-700 ml-2">{answers[q.id] || 'Not answered'}</span>
-                            </div>
-                            <div className="text-sm">
-                              <span className="font-semibold text-green-600">Correct answer:</span>
-                              <span className="text-gray-700 ml-2">{q.correct}</span>
-                            </div>
-                          </div>
-                        </div>
-                      );
-                    })}
-                  </div>
-                </div>
-              )}
-
-              {/* Correct Answers */}
-              {questions.some(q => answers[q.id] === q.correct) && (
-                <div>
-                  <div className="flex items-center justify-between mb-2">
-                    <span className="font-semibold text-gray-700 flex items-center gap-2">
-                      <CheckCircle className="w-4 h-4 text-green-600" />
-                      Correct Answers
-                    </span>
-                    <span className="text-xs text-gray-500">
-                      {questions.filter(q => answers[q.id] === q.correct).length} correct
-                    </span>
-                  </div>
-                  <div className="bg-green-50 border border-green-200 rounded-lg p-3">
-                    <div className="text-sm text-gray-700">
-                      {questions.filter(q => answers[q.id] === q.correct).map((q, idx) => (
-                        <div key={q.id} className="flex items-start gap-2 mb-1">
-                          <CheckCircle2 className="w-4 h-4 text-green-600 mt-0.5 flex-shrink-0" />
-                          <span>Question {questions.indexOf(q) + 1}</span>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                </div>
-              )}
-            </motion.div>
-          )}
         </div>
 
         <div className="space-y-6">
@@ -884,6 +870,195 @@ export function ListeningSection({ cefrLevel, onActivitySaved, assignmentId, ini
               </h3>
               <p className="text-sm text-gray-700 whitespace-pre-line leading-relaxed">{exercise.text}</p>
               <p className="text-xs text-gray-500 mt-3">You can read this if audio doesn't play, then answer the questions.</p>
+            </motion.div>
+          )}
+
+          {/* Results & Analysis - Only show after submission */}
+          {submitted && (
+            <motion.div
+              initial={{ opacity: 0, y: 16 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ delay: 0.2 }}
+              className="bg-gradient-to-br from-indigo-50 to-purple-50 rounded-2xl p-6 border-2 border-indigo-200 shadow-lg"
+            >
+              <div className="flex items-center justify-between mb-6">
+                <h3 className="text-xl font-bold text-gray-900 flex items-center gap-2">
+                  <Sparkles className="w-5 h-5 text-indigo-600" />
+                  Results & Analysis
+                </h3>
+                <div className="text-center">
+                  <div className="text-3xl font-bold text-indigo-600">
+                    {score.total > 0 ? Math.round((score.correctCount / score.total) * 100) : 0}%
+                  </div>
+                  <div className="text-xs text-gray-500 mt-0.5">Overall Score</div>
+                </div>
+              </div>
+
+              {/* Performance Breakdown */}
+              <div className="mb-5">
+                <div className="bg-white rounded-xl p-4 border border-gray-200 shadow-sm">
+                  <h4 className="font-bold text-gray-800 mb-3 text-sm">Performance Breakdown</h4>
+                  <div className="grid grid-cols-3 gap-3">
+                    <div className="text-center p-3 bg-green-50 rounded-lg border border-green-200">
+                      <div className="text-2xl font-bold text-green-600">{score.correctCount}</div>
+                      <div className="text-xs text-gray-600 mt-1">Correct</div>
+                    </div>
+                    <div className="text-center p-3 bg-red-50 rounded-lg border border-red-200">
+                      <div className="text-2xl font-bold text-red-600">{score.total - score.correctCount}</div>
+                      <div className="text-xs text-gray-600 mt-1">Incorrect</div>
+                    </div>
+                    <div className="text-center p-3 bg-indigo-50 rounded-lg border border-indigo-200">
+                      <div className="text-2xl font-bold text-indigo-600">{score.total}</div>
+                      <div className="text-xs text-gray-600 mt-1">Total</div>
+                    </div>
+                  </div>
+                  
+                  {/* Progress Bar */}
+                  <div className="mt-4">
+                    <div className="flex items-center justify-between mb-1.5">
+                      <span className="text-xs font-semibold text-gray-600">Accuracy Rate</span>
+                      <span className="text-xs font-bold text-indigo-600">
+                        {score.total > 0 ? Math.round((score.correctCount / score.total) * 100) : 0}%
+                      </span>
+                    </div>
+                    <div className="w-full bg-gray-200 rounded-full h-3 overflow-hidden">
+                      <div 
+                        className="h-full bg-gradient-to-r from-indigo-500 to-purple-500 rounded-full transition-all duration-500"
+                        style={{ width: `${score.total > 0 ? (score.correctCount / score.total) * 100 : 0}%` }}
+                      />
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* Summary */}
+              <div className="mb-5">
+                <div className="bg-white border border-gray-200 rounded-xl p-4 shadow-sm">
+                  <h4 className="font-bold text-gray-800 mb-2 text-sm flex items-center gap-2">
+                    <BookOpen className="w-4 h-4 text-indigo-600" />
+                    Summary & Feedback
+                  </h4>
+                  <div className="text-sm text-gray-700 leading-relaxed">
+                    <p className="mb-2">
+                      You answered <span className="font-bold text-indigo-600">{score.correctCount}</span> out of <span className="font-bold">{score.total}</span> questions correctly.
+                    </p>
+                    {score.correctCount === score.total && (
+                      <div className="mt-3 p-3 bg-gradient-to-r from-green-50 to-emerald-50 rounded-lg border border-green-200">
+                        <p className="font-semibold text-green-700">🎉 Perfect Score!</p>
+                        <p className="text-xs text-green-600 mt-1">Outstanding work! You've mastered this listening exercise completely.</p>
+                      </div>
+                    )}
+                    {score.correctCount < score.total && score.correctCount >= score.total * 0.8 && (
+                      <div className="mt-3 p-3 bg-gradient-to-r from-blue-50 to-indigo-50 rounded-lg border border-blue-200">
+                        <p className="font-semibold text-blue-700">⭐ Excellent Work!</p>
+                        <p className="text-xs text-blue-600 mt-1">You're doing great! Review the incorrect answers to achieve perfection.</p>
+                      </div>
+                    )}
+                    {score.correctCount < score.total * 0.8 && score.correctCount >= score.total * 0.6 && (
+                      <div className="mt-3 p-3 bg-gradient-to-r from-yellow-50 to-amber-50 rounded-lg border border-yellow-200">
+                        <p className="font-semibold text-yellow-700">💪 Good Effort!</p>
+                        <p className="text-xs text-yellow-600 mt-1">You're making progress! Focus on the areas below to improve your score.</p>
+                      </div>
+                    )}
+                    {score.correctCount < score.total * 0.6 && (
+                      <div className="mt-3 p-3 bg-gradient-to-r from-orange-50 to-red-50 rounded-lg border border-orange-200">
+                        <p className="font-semibold text-orange-700">📚 Keep Practicing!</p>
+                        <p className="text-xs text-orange-600 mt-1">Don't give up! Review the transcript and try similar exercises to improve your listening skills.</p>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              </div>
+
+              {/* Wrong Answers - Detailed */}
+              {questions.some(q => answers[q.id] !== q.correct) && (
+                <div className="mb-5">
+                  <div className="flex items-center justify-between mb-3">
+                    <h4 className="font-bold text-gray-800 text-sm flex items-center gap-2">
+                      <XCircle className="w-4 h-4 text-red-600" />
+                      Incorrect Answers - Review & Learn
+                    </h4>
+                    <span className="text-xs bg-red-100 text-red-700 px-2.5 py-1 rounded-full font-semibold">
+                      {questions.filter(q => answers[q.id] !== q.correct).length} mistake(s)
+                    </span>
+                  </div>
+                  <div className="space-y-3">
+                    {questions.map((q, idx) => {
+                      if (answers[q.id] === q.correct) return null;
+                      return (
+                        <div key={q.id} className="bg-white border-l-4 border-red-500 rounded-lg p-4 shadow-sm">
+                          <div className="flex items-start justify-between mb-2">
+                            <div className="font-bold text-red-700 text-sm">Question {idx + 1}</div>
+                            <span className="text-xs bg-red-100 text-red-600 px-2 py-0.5 rounded-full font-medium">Wrong</span>
+                          </div>
+                          <div className="text-sm text-gray-800 mb-3 font-medium">{q.question}</div>
+                          <div className="space-y-2 bg-gray-50 rounded-lg p-3">
+                            <div className="flex items-start gap-2">
+                              <XCircle className="w-4 h-4 text-red-500 mt-0.5 flex-shrink-0" />
+                              <div className="text-sm">
+                                <span className="font-semibold text-red-600">Your answer:</span>
+                                <span className="text-gray-700 ml-2">{answers[q.id] || 'Not answered'}</span>
+                              </div>
+                            </div>
+                            <div className="flex items-start gap-2">
+                              <CheckCircle className="w-4 h-4 text-green-500 mt-0.5 flex-shrink-0" />
+                              <div className="text-sm">
+                                <span className="font-semibold text-green-600">Correct answer:</span>
+                                <span className="text-gray-700 ml-2 font-medium">{q.correct}</span>
+                              </div>
+                            </div>
+                          </div>
+                          {questionTips[q.id] ? (
+                            <div className="mt-2 text-xs text-gray-600 italic bg-yellow-50 border border-yellow-200 rounded px-2 py-1.5">
+                              💡 <span className="font-semibold">Tip:</span> {questionTips[q.id]}
+                            </div>
+                          ) : loadingTips ? (
+                            <div className="mt-2 text-xs text-gray-400 italic animate-pulse">
+                              💡 Generating personalized tip...
+                            </div>
+                          ) : (
+                            <div className="mt-2 text-xs text-gray-500 italic">
+                              💡 Listen to the audio again and focus on context.
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+
+              {/* Correct Answers - Detailed */}
+              {questions.some(q => answers[q.id] === q.correct) && (
+                <div>
+                  <div className="flex items-center justify-between mb-3">
+                    <h4 className="font-bold text-gray-800 text-sm flex items-center gap-2">
+                      <CheckCircle className="w-4 h-4 text-green-600" />
+                      Correct Answers - Well Done!
+                    </h4>
+                    <span className="text-xs bg-green-100 text-green-700 px-2.5 py-1 rounded-full font-semibold">
+                      {questions.filter(q => answers[q.id] === q.correct).length} correct
+                    </span>
+                  </div>
+                  <div className="bg-white border border-green-200 rounded-xl p-4 shadow-sm">
+                    <div className="space-y-2">
+                      {questions.filter(q => answers[q.id] === q.correct).map((q, idx) => (
+                        <div key={q.id} className="flex items-start gap-3 p-2.5 rounded-lg bg-green-50 border border-green-100">
+                          <CheckCircle2 className="w-5 h-5 text-green-600 mt-0.5 flex-shrink-0" />
+                          <div className="flex-1">
+                            <div className="flex items-center justify-between">
+                              <span className="font-semibold text-sm text-gray-800">Question {questions.indexOf(q) + 1}</span>
+                              <span className="text-xs bg-green-200 text-green-700 px-2 py-0.5 rounded-full font-medium">✓ Correct</span>
+                            </div>
+                            <div className="text-xs text-gray-600 mt-1">{q.question}</div>
+                            <div className="text-xs text-green-700 font-medium mt-1">Your answer: {q.correct}</div>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+              )}
             </motion.div>
           )}
         </div>
