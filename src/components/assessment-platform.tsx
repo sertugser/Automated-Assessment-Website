@@ -194,6 +194,14 @@ export function AssessmentPlatform({ onBack, user }: AssessmentPlatformProps) {
     }
   }, [currentScreen]);
 
+  // Clear listening activity context when leaving listening (so next visit gets fresh state)
+  useEffect(() => {
+    if (currentScreen !== 'listening') {
+      setInitialListeningActivityId(null);
+      setInitialListeningAssignmentId(null);
+    }
+  }, [currentScreen]);
+
   // Sync currentUser with localStorage when screen changes or periodically
   useEffect(() => {
     const syncUser = () => {

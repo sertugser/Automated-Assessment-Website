@@ -64,6 +64,12 @@ export interface UserActivity {
     correct: string;
   }>;
   listeningUserAnswers?: Record<string, string>;
+  listeningAIAnalysis?: {
+    summary: string;
+    strengths?: string[];
+    improvements?: string[];
+    strategyTips?: string[];
+  };
   instructorFeedback?: string;
   instructorScore?: number;
   reviewedAt?: string;

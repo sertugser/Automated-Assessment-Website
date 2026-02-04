@@ -95,8 +95,8 @@ export function DictionarySection() {
           setPersonalizedWords(words);
         } catch (retryError) {
           console.error('Error retrying personalized words:', retryError);
-          // If AI completely fails, show empty state with message
-          setPersonalizedWords([]);
+          // If AI completely fails, fall back to a small static set
+          setPersonalizedWords(['resilient', 'curious', 'accurate', 'collaborate']);
         }
       } finally {
         setLoadingWords(false);

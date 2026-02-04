@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { motion } from 'motion/react';
-import { Headphones, PlayCircle, PauseCircle, RotateCcw, CheckCircle2, BookOpen, Sparkles, ArrowLeft, List, XCircle, CheckCircle } from 'lucide-react';
+import { Headphones, PlayCircle, PauseCircle, RotateCcw, CheckCircle2, BookOpen, Sparkles, ArrowLeft, List, Lock } from 'lucide-react';
 import { useLanguage } from '../contexts/LanguageContext';
 import { generateListeningQuestions } from '../lib/ai-services';
 import type { ListeningQuestion } from '../lib/ai-services';
@@ -16,6 +16,13 @@ interface ListeningExercise {
   title: string;
   text: string;
   questionCount: number;
+}
+
+interface ListeningAIAnalysis {
+  summary: string;
+  strengths: string[];
+  improvements: string[];
+  strategyTips: string[];
 }
 
 const EXERCISES_BY_LEVEL: Record<Level, ListeningExercise[]> = {
@@ -220,8 +227,13 @@ export function ListeningSection({ cefrLevel, onActivitySaved, assignmentId, ini
   const [questionsRetryToken, setQuestionsRetryToken] = useState(0);
   const [questionTips, setQuestionTips] = useState<Record<string, string>>({});
   const [loadingTips, setLoadingTips] = useState(false);
+  const [aiAnalysis, setAiAnalysis] = useState<ListeningAIAnalysis | null>(null);
+  const [loadingAnalysis, setLoadingAnalysis] = useState(false);
+  const [analysisError, setAnalysisError] = useState<string | null>(null);
 
   const exercisesForLevel = EXERCISES_BY_LEVEL[selectedLevel];
+  const userHasFixedLevel = !!cefrLevel && LEVEL_ORDER.includes(cefrLevel);
+  const userLevelIndex = userHasFixedLevel ? LEVEL_ORDER.indexOf(cefrLevel as Level) : -1;
   const exercise = selectedExerciseId
     ? exercisesForLevel.find((e) => e.id === selectedExerciseId) ?? null
     : null;
@@ -270,6 +282,13 @@ export function ListeningSection({ cefrLevel, onActivitySaved, assignmentId, ini
         if (activity.listeningUserAnswers) {
           setAnswers(activity.listeningUserAnswers);
         }
+        if ((activity as any).listeningAIAnalysis) {
+          setAiAnalysis((activity as any).listeningAIAnalysis);
+          setAnalysisError(null);
+          setLoadingAnalysis(false);
+        } else {
+          setAiAnalysis(null);
+        }
         setSubmitted(true);
         
         // Try to find and select the exercise based on the title
@@ -293,6 +312,17 @@ export function ListeningSection({ cefrLevel, onActivitySaved, assignmentId, ini
       setTimeout(() => {
         isRestoringRef.current = false;
       }, 0);
+    } else {
+      // Clear state when initialActivityId is null (user navigated away and came back)
+      // Only clear if we're not in the middle of restoring
+      if (!isRestoringRef.current) {
+        setAnswers({});
+        setSubmitted(false);
+        setAiAnalysis(null);
+        setAnalysisError(null);
+        setSelectedExerciseId(null);
+        restoredExerciseIdRef.current = null;
+      }
     }
   }, [initialActivityId]);
 
@@ -560,10 +590,165 @@ Return ONLY the tip text, nothing else.`;
     setLoadingTips(false);
   };
 
-  const handleCheckAnswers = () => {
+  const generateOverallListeningAnalysis = async (
+    exerciseForAnalysis: ListeningExercise | null,
+    levelForAnalysis: Level,
+    questionsForAnalysis: ListeningQuestion[],
+    answersForAnalysis: Record<string, string>,
+    percent: number
+  ): Promise<ListeningAIAnalysis | null> => {
+    if (!exerciseForAnalysis || questionsForAnalysis.length === 0) return null;
+
+    const GROQ_API_KEY = (import.meta.env.VITE_GROQ_API_KEY || '').trim().replace(/^["']|["']$/g, '');
+    if (!GROQ_API_KEY) {
+      setAnalysisError('AI analysis is not available because the Groq API key is missing.');
+      return null;
+    }
+
+    try {
+      setLoadingAnalysis(true);
+      setAnalysisError(null);
+
+      const incorrect = questionsForAnalysis
+        .filter((q) => answersForAnalysis[q.id] !== q.correct)
+        .map((q) => ({
+          question: q.question,
+          correctAnswer: q.correct,
+          userAnswer: answersForAnalysis[q.id] ?? '',
+        }));
+
+      const correct = questionsForAnalysis
+        .filter((q) => answersForAnalysis[q.id] === q.correct)
+        .map((q) => ({
+          question: q.question,
+          answer: q.correct,
+        }));
+
+      const systemPrompt =
+        'You are an expert English listening teacher. You analyse a student\'s listening exercise and return JSON only.';
+
+      const userPrompt = `A student has just completed a listening comprehension exercise.
+
+Transcript title: ${exerciseForAnalysis.title}
+Approximate CEFR level: ${levelForAnalysis}
+Transcript (excerpt, first 400 characters):
+"""${exerciseForAnalysis.text.slice(0, 400)}..."""
+
+Total questions: ${questionsForAnalysis.length}
+Correct answers: ${questionsForAnalysis.reduce((acc, q) => acc + (answersForAnalysis[q.id] === q.correct ? 1 : 0), 0)}
+Overall score (percent): ${percent}%
+
+Correct questions:
+${JSON.stringify(correct, null, 2)}
+
+Incorrect questions (if any):
+${JSON.stringify(incorrect, null, 2)}
+
+Based on this information, analyse the student's listening performance.
+
+Return ONLY a compact JSON object (no markdown, no explanation text around it) with this exact shape:
+{
+  "summary": "1–3 sentences of friendly feedback about this performance.",
+  "strengths": ["short bullet about a strength", "..."],
+  "improvements": ["short bullet about an area to improve", "..."],
+  "strategyTips": ["very short, practical listening strategy tip", "..."]
+}
+
+Rules:
+- Each array should have between 2 and 4 items if possible.
+- Sentences should be clear and B1–B2 friendly.
+- Strategy tips must focus on listening skills (not grammar drills).`;
+
+      const response = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${GROQ_API_KEY}`,
+        },
+        body: JSON.stringify({
+          model: 'llama-3.3-70b-versatile',
+          messages: [
+            { role: 'system', content: systemPrompt },
+            { role: 'user', content: userPrompt },
+          ],
+          temperature: 0.7,
+          max_tokens: 300,
+        }),
+      });
+
+      if (!response.ok) {
+        throw new Error(`Groq API error: ${response.status}`);
+      }
+
+      const data = await response.json();
+      let content: string = data.choices?.[0]?.message?.content ?? '';
+      content = content.trim();
+
+      // Strip possible code fences if the model accidentally adds them
+      if (content.startsWith('```')) {
+        const firstNewline = content.indexOf('\n');
+        const lastFence = content.lastIndexOf('```');
+        if (firstNewline !== -1 && lastFence !== -1 && lastFence > firstNewline) {
+          content = content.slice(firstNewline + 1, lastFence).trim();
+        }
+      }
+
+      let parsed: any;
+      try {
+        parsed = JSON.parse(content);
+      } catch {
+        // Try to recover by finding first and last braces
+        const start = content.indexOf('{');
+        const end = content.lastIndexOf('}');
+        if (start !== -1 && end !== -1 && end > start) {
+          parsed = JSON.parse(content.slice(start, end + 1));
+        } else {
+          throw new Error('Could not parse AI analysis JSON');
+        }
+      }
+
+      const normalizeArray = (value: unknown): string[] => {
+        if (Array.isArray(value)) {
+          return value.map((v) => String(v)).filter((v) => v.trim().length > 0);
+        }
+        if (typeof value === 'string' && value.trim()) {
+          return [value.trim()];
+        }
+        return [];
+      };
+
+      const normalized: ListeningAIAnalysis = {
+        summary: typeof parsed.summary === 'string' && parsed.summary.trim()
+          ? parsed.summary.trim()
+          : 'Here is a quick overview of your listening performance based on this exercise.',
+        strengths: normalizeArray(parsed.strengths),
+        improvements: normalizeArray(parsed.improvements),
+        strategyTips: normalizeArray(parsed.strategyTips),
+      };
+
+      setAiAnalysis(normalized);
+      return normalized;
+    } catch (error) {
+      console.error('Error generating overall listening analysis:', error);
+      setAnalysisError('AI analysis could not be generated. Please try again later.');
+      return null;
+    } finally {
+      setLoadingAnalysis(false);
+    }
+  };
+
+  const handleCheckAnswers = async () => {
     if (submitted) return;
     setSubmitted(true);
     const percent = score.total > 0 ? Math.round((score.correctCount / score.total) * 100) : 0;
+
+    const analysis = await generateOverallListeningAnalysis(
+      exercise,
+      selectedLevel,
+      questions,
+      answers,
+      percent
+    );
 
     saveActivity({
       type: 'listening',
@@ -577,6 +762,7 @@ Return ONLY the tip text, nothing else.`;
         correct: q.correct,
       })),
       listeningUserAnswers: answers,
+      listeningAIAnalysis: analysis || undefined,
     });
 
     if (assignmentId) {
@@ -596,6 +782,8 @@ Return ONLY the tip text, nothing else.`;
     
     // Generate AI tips for incorrect answers
     generateAITipsForIncorrectAnswers();
+    // Generate overall AI analysis for this listening exercise
+    generateOverallListeningAnalysis();
   };
 
   const hasTTS = typeof window !== 'undefined' && 'speechSynthesis' in window;
@@ -616,30 +804,50 @@ Return ONLY the tip text, nothing else.`;
         <div className="flex flex-wrap items-center gap-3 sm:gap-4">
           <span className="text-sm font-semibold text-gray-700 shrink-0">Level (CEFR):</span>
           <div className="flex flex-wrap gap-2">
-            {LEVEL_ORDER.map((lvl) => (
-              <button
-                key={lvl}
-                type="button"
-                onClick={() => setSelectedLevel(lvl)}
-                className={`relative min-w-[44px] px-3 py-2 rounded-lg border font-semibold text-sm transition-colors ${
-                  selectedLevel === lvl
-                    ? 'border-indigo-500 bg-indigo-600 text-white shadow-sm'
-                    : 'border-gray-200 bg-gray-50 text-gray-700 hover:bg-gray-100 hover:border-gray-300'
-                }`}
-              >
-                {lvl}
-                {cefrLevel === lvl && (
-                  <span className="absolute -top-0.5 -right-0.5 flex h-3.5 w-3.5 text-amber-400" title="Your recommended level">
-                    <Sparkles className="h-3.5 w-3.5" />
+            {LEVEL_ORDER.map((lvl) => {
+              const lvlIndex = LEVEL_ORDER.indexOf(lvl);
+              const isLocked = userHasFixedLevel && lvlIndex > userLevelIndex;
+              const isActive = selectedLevel === lvl;
+              return (
+                <button
+                  key={lvl}
+                  type="button"
+                  disabled={isLocked}
+                  onClick={() => {
+                    if (isLocked) return;
+                    setSelectedLevel(lvl);
+                  }}
+                  className={`relative min-w-[44px] px-3 py-2 rounded-lg border font-semibold text-sm transition-colors ${
+                    isActive
+                      ? 'border-indigo-500 bg-indigo-600 text-white shadow-sm'
+                      : isLocked
+                        ? 'border-gray-200 bg-gray-50 text-gray-400 cursor-not-allowed'
+                        : 'border-gray-200 bg-gray-50 text-gray-700 hover:bg-gray-100 hover:border-gray-300'
+                  }`}
+                >
+                  <span className="inline-flex items-center gap-1">
+                    {lvl}
+                    {isLocked && (
+                      <Lock className="w-3 h-3 text-gray-400" aria-hidden="true" />
+                    )}
                   </span>
-                )}
-              </button>
-            ))}
+                  {cefrLevel === lvl && (
+                    <span
+                      className="absolute -top-0.5 -right-0.5 flex h-3.5 w-3.5 text-amber-400"
+                      title="Your level"
+                    >
+                      <Sparkles className="h-3.5 w-3.5" />
+                    </span>
+                  )}
+                </button>
+              );
+            })}
           </div>
           <p className="text-xs text-gray-500 mt-0 sm:mt-0 sm:ml-auto max-w-md">
             {cefrLevel ? (
               <>
                 <Sparkles className="w-3.5 h-3.5 inline mr-0.5 text-amber-500 align-middle" />
+                {/* Hint text: other levels are locked */}
                 {t('listening.recommendedHint').replace('{level}', cefrLevel)}
               </>
             ) : (
@@ -838,6 +1046,8 @@ Return ONLY the tip text, nothing else.`;
                 onClick={() => {
                   setAnswers({});
                   setSubmitted(false);
+                  setAiAnalysis(null);
+                  setAnalysisError(null);
                 }}
                 className="px-4 py-2.5 rounded-xl border border-gray-200 text-gray-700 font-semibold hover:bg-gray-50 transition-colors"
               >
@@ -936,129 +1146,91 @@ Return ONLY the tip text, nothing else.`;
                 <div className="bg-white border border-gray-200 rounded-xl p-4 shadow-sm">
                   <h4 className="font-bold text-gray-800 mb-2 text-sm flex items-center gap-2">
                     <BookOpen className="w-4 h-4 text-indigo-600" />
-                    Summary & Feedback
+                    AI Summary & Feedback
                   </h4>
                   <div className="text-sm text-gray-700 leading-relaxed">
                     <p className="mb-2">
                       You answered <span className="font-bold text-indigo-600">{score.correctCount}</span> out of <span className="font-bold">{score.total}</span> questions correctly.
                     </p>
-                    {score.correctCount === score.total && (
-                      <div className="mt-3 p-3 bg-gradient-to-r from-green-50 to-emerald-50 rounded-lg border border-green-200">
-                        <p className="font-semibold text-green-700">🎉 Perfect Score!</p>
-                        <p className="text-xs text-green-600 mt-1">Outstanding work! You've mastered this listening exercise completely.</p>
+                    {loadingAnalysis && (
+                      <div className="mt-3 text-xs text-gray-500 italic flex items-center gap-1">
+                        <Sparkles className="w-3.5 h-3.5 text-indigo-500" />
+                        <span>AI is analysing your listening performance...</span>
                       </div>
                     )}
-                    {score.correctCount < score.total && score.correctCount >= score.total * 0.8 && (
-                      <div className="mt-3 p-3 bg-gradient-to-r from-blue-50 to-indigo-50 rounded-lg border border-blue-200">
-                        <p className="font-semibold text-blue-700">⭐ Excellent Work!</p>
-                        <p className="text-xs text-blue-600 mt-1">You're doing great! Review the incorrect answers to achieve perfection.</p>
+                    {analysisError && !loadingAnalysis && (
+                      <div className="mt-3 text-xs text-red-600">
+                        {analysisError}
                       </div>
                     )}
-                    {score.correctCount < score.total * 0.8 && score.correctCount >= score.total * 0.6 && (
-                      <div className="mt-3 p-3 bg-gradient-to-r from-yellow-50 to-amber-50 rounded-lg border border-yellow-200">
-                        <p className="font-semibold text-yellow-700">💪 Good Effort!</p>
-                        <p className="text-xs text-yellow-600 mt-1">You're making progress! Focus on the areas below to improve your score.</p>
+                    {aiAnalysis && !loadingAnalysis && !analysisError && (
+                      <div className="mt-3 space-y-3">
+                        <p className="text-sm text-gray-700">{aiAnalysis.summary}</p>
+                        {aiAnalysis.strengths.length > 0 && (
+                          <div>
+                            <div className="text-xs font-semibold text-green-700 mb-1">Strengths</div>
+                            <ul className="list-disc list-inside text-xs text-gray-700 space-y-0.5">
+                              {aiAnalysis.strengths.map((item, idx) => (
+                                <li key={idx}>{item}</li>
+                              ))}
+                            </ul>
+                          </div>
+                        )}
+                        {aiAnalysis.improvements.length > 0 && (
+                          <div>
+                            <div className="text-xs font-semibold text-amber-700 mb-1">Areas to improve</div>
+                            <ul className="list-disc list-inside text-xs text-gray-700 space-y-0.5">
+                              {aiAnalysis.improvements.map((item, idx) => (
+                                <li key={idx}>{item}</li>
+                              ))}
+                            </ul>
+                          </div>
+                        )}
+                        {aiAnalysis.strategyTips.length > 0 && (
+                          <div>
+                            <div className="text-xs font-semibold text-indigo-700 mb-1">Listening strategy tips</div>
+                            <ul className="list-disc list-inside text-xs text-gray-700 space-y-0.5">
+                              {aiAnalysis.strategyTips.map((item, idx) => (
+                                <li key={idx}>{item}</li>
+                              ))}
+                            </ul>
+                          </div>
+                        )}
                       </div>
                     )}
-                    {score.correctCount < score.total * 0.6 && (
-                      <div className="mt-3 p-3 bg-gradient-to-r from-orange-50 to-red-50 rounded-lg border border-orange-200">
-                        <p className="font-semibold text-orange-700">📚 Keep Practicing!</p>
-                        <p className="text-xs text-orange-600 mt-1">Don't give up! Review the transcript and try similar exercises to improve your listening skills.</p>
-                      </div>
+                    {!aiAnalysis && !loadingAnalysis && !analysisError && (
+                      <>
+                        {score.correctCount === score.total && (
+                          <div className="mt-3 p-3 bg-gradient-to-r from-green-50 to-emerald-50 rounded-lg border border-green-200">
+                            <p className="font-semibold text-green-700">Perfect Score!</p>
+                            <p className="text-xs text-green-600 mt-1">Outstanding work! You've mastered this listening exercise completely.</p>
+                          </div>
+                        )}
+                        {score.correctCount < score.total && score.correctCount >= score.total * 0.8 && (
+                          <div className="mt-3 p-3 bg-gradient-to-r from-blue-50 to-indigo-50 rounded-lg border border-blue-200">
+                            <p className="font-semibold text-blue-700">Excellent Work!</p>
+                            <p className="text-xs text-blue-600 mt-1">You're doing great! Review the incorrect answers to achieve perfection.</p>
+                          </div>
+                        )}
+                        {score.correctCount < score.total * 0.8 && score.correctCount >= score.total * 0.6 && (
+                          <div className="mt-3 p-3 bg-gradient-to-r from-yellow-50 to-amber-50 rounded-lg border border-yellow-200">
+                            <p className="font-semibold text-yellow-700">Good Effort!</p>
+                            <p className="text-xs text-yellow-600 mt-1">You're making progress! Focus on the areas below to improve your score.</p>
+                          </div>
+                        )}
+                        {score.correctCount < score.total * 0.6 && (
+                          <div className="mt-3 p-3 bg-gradient-to-r from-orange-50 to-red-50 rounded-lg border border-orange-200">
+                            <p className="font-semibold text-orange-700">Keep Practicing!</p>
+                            <p className="text-xs text-orange-600 mt-1">Don't give up! Review the transcript and try similar exercises to improve your listening skills.</p>
+                          </div>
+                        )}
+                      </>
                     )}
                   </div>
                 </div>
               </div>
 
-              {/* Wrong Answers - Detailed */}
-              {questions.some(q => answers[q.id] !== q.correct) && (
-                <div className="mb-5">
-                  <div className="flex items-center justify-between mb-3">
-                    <h4 className="font-bold text-gray-800 text-sm flex items-center gap-2">
-                      <XCircle className="w-4 h-4 text-red-600" />
-                      Incorrect Answers - Review & Learn
-                    </h4>
-                    <span className="text-xs bg-red-100 text-red-700 px-2.5 py-1 rounded-full font-semibold">
-                      {questions.filter(q => answers[q.id] !== q.correct).length} mistake(s)
-                    </span>
-                  </div>
-                  <div className="space-y-3">
-                    {questions.map((q, idx) => {
-                      if (answers[q.id] === q.correct) return null;
-                      return (
-                        <div key={q.id} className="bg-white border-l-4 border-red-500 rounded-lg p-4 shadow-sm">
-                          <div className="flex items-start justify-between mb-2">
-                            <div className="font-bold text-red-700 text-sm">Question {idx + 1}</div>
-                            <span className="text-xs bg-red-100 text-red-600 px-2 py-0.5 rounded-full font-medium">Wrong</span>
-                          </div>
-                          <div className="text-sm text-gray-800 mb-3 font-medium">{q.question}</div>
-                          <div className="space-y-2 bg-gray-50 rounded-lg p-3">
-                            <div className="flex items-start gap-2">
-                              <XCircle className="w-4 h-4 text-red-500 mt-0.5 flex-shrink-0" />
-                              <div className="text-sm">
-                                <span className="font-semibold text-red-600">Your answer:</span>
-                                <span className="text-gray-700 ml-2">{answers[q.id] || 'Not answered'}</span>
-                              </div>
-                            </div>
-                            <div className="flex items-start gap-2">
-                              <CheckCircle className="w-4 h-4 text-green-500 mt-0.5 flex-shrink-0" />
-                              <div className="text-sm">
-                                <span className="font-semibold text-green-600">Correct answer:</span>
-                                <span className="text-gray-700 ml-2 font-medium">{q.correct}</span>
-                              </div>
-                            </div>
-                          </div>
-                          {questionTips[q.id] ? (
-                            <div className="mt-2 text-xs text-gray-600 italic bg-yellow-50 border border-yellow-200 rounded px-2 py-1.5">
-                              💡 <span className="font-semibold">Tip:</span> {questionTips[q.id]}
-                            </div>
-                          ) : loadingTips ? (
-                            <div className="mt-2 text-xs text-gray-400 italic animate-pulse">
-                              💡 Generating personalized tip...
-                            </div>
-                          ) : (
-                            <div className="mt-2 text-xs text-gray-500 italic">
-                              💡 Listen to the audio again and focus on context.
-                            </div>
-                          )}
-                        </div>
-                      );
-                    })}
-                  </div>
-                </div>
-              )}
-
-              {/* Correct Answers - Detailed */}
-              {questions.some(q => answers[q.id] === q.correct) && (
-                <div>
-                  <div className="flex items-center justify-between mb-3">
-                    <h4 className="font-bold text-gray-800 text-sm flex items-center gap-2">
-                      <CheckCircle className="w-4 h-4 text-green-600" />
-                      Correct Answers - Well Done!
-                    </h4>
-                    <span className="text-xs bg-green-100 text-green-700 px-2.5 py-1 rounded-full font-semibold">
-                      {questions.filter(q => answers[q.id] === q.correct).length} correct
-                    </span>
-                  </div>
-                  <div className="bg-white border border-green-200 rounded-xl p-4 shadow-sm">
-                    <div className="space-y-2">
-                      {questions.filter(q => answers[q.id] === q.correct).map((q, idx) => (
-                        <div key={q.id} className="flex items-start gap-3 p-2.5 rounded-lg bg-green-50 border border-green-100">
-                          <CheckCircle2 className="w-5 h-5 text-green-600 mt-0.5 flex-shrink-0" />
-                          <div className="flex-1">
-                            <div className="flex items-center justify-between">
-                              <span className="font-semibold text-sm text-gray-800">Question {questions.indexOf(q) + 1}</span>
-                              <span className="text-xs bg-green-200 text-green-700 px-2 py-0.5 rounded-full font-medium">✓ Correct</span>
-                            </div>
-                            <div className="text-xs text-gray-600 mt-1">{q.question}</div>
-                            <div className="text-xs text-green-700 font-medium mt-1">Your answer: {q.correct}</div>
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                </div>
-              )}
+              {/* Correct Answers - Detailed removed as requested */}
             </motion.div>
           )}
         </div>
