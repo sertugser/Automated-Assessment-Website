@@ -355,7 +355,7 @@ export function ProfilePage({ user, onLogout, onUpdateUser }: ProfilePageProps) 
             </div>
 
             {/* Quick Stats */}
-            <div className="grid grid-cols-3 gap-4">
+            <div className={`grid gap-4 ${user.role === 'instructor' ? 'grid-cols-2' : 'grid-cols-3'}`}>
               <div className="text-center">
                 <div className="w-16 h-16 mx-auto bg-gradient-to-br from-indigo-500 to-indigo-600 rounded-xl flex items-center justify-center text-white mb-2 shadow-lg">
                   <Target className="w-8 h-8" />
@@ -370,13 +370,15 @@ export function ProfilePage({ user, onLogout, onUpdateUser }: ProfilePageProps) 
                 <div className="text-2xl font-bold text-gray-900">{stats.streak}</div>
                 <div className="text-xs text-gray-600">Day Streak</div>
               </div>
-              <div className="text-center">
-                <div className="w-16 h-16 mx-auto bg-gradient-to-br from-green-500 to-green-600 rounded-xl flex items-center justify-center text-white mb-2 shadow-lg">
-                  <Award className="w-8 h-8" />
+              {user.role !== 'instructor' && (
+                <div className="text-center">
+                  <div className="w-16 h-16 mx-auto bg-gradient-to-br from-green-500 to-green-600 rounded-xl flex items-center justify-center text-white mb-2 shadow-lg">
+                    <Award className="w-8 h-8" />
+                  </div>
+                  <div className="text-2xl font-bold text-gray-900">{stats.totalPoints.toLocaleString()}</div>
+                  <div className="text-xs text-gray-600">Points</div>
                 </div>
-                <div className="text-2xl font-bold text-gray-900">{stats.totalPoints.toLocaleString()}</div>
-                <div className="text-xs text-gray-600">Points</div>
-              </div>
+              )}
             </div>
           </div>
         </motion.div>

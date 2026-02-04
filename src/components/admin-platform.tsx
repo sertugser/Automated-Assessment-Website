@@ -6,7 +6,8 @@ import {
   Search, Filter, Download, RefreshCw, Eye, EyeOff, Lock, Save, X
 } from 'lucide-react';
 import { getUsers, deleteUser, updateUser, getCurrentUser, logout, changePassword, type User as UserType } from '../lib/auth';
-import { getUserStats, getActivitiesForUser, type UserActivity } from '../lib/user-progress';
+import { getUserStats, getActivitiesForUser, calculateTotalPoints, type UserActivity } from '../lib/user-progress';
+import { getSubmissionsByInstructor } from '../lib/assignments';
 import { toast } from 'sonner';
 import { useLanguage } from '../contexts/LanguageContext';
 
@@ -173,8 +174,22 @@ export function AdminPlatform({ onBack, user }: AdminPlatformProps) {
     return getActivitiesForUser(userId);
   };
 
-  const getUserStatsForUser = (userId: string) => {
-    // Always get fresh activities from localStorage
+  const getUserStatsForUser = (userId: string, userRole?: string) => {
+    // For instructors, count feedback given instead of activities
+    if (userRole === 'instructor') {
+      const submissions = getSubmissionsByInstructor(userId);
+      const feedbackCount = submissions.filter(s => 
+        s.instructorFeedback || typeof s.instructorScore === 'number'
+      ).length;
+      return {
+        totalActivities: feedbackCount,
+        averageScore: 0,
+        totalPoints: 0,
+        streak: 0,
+      };
+    }
+    
+    // For students, use activities
     const activities = getActivitiesForUser(userId);
     if (activities.length === 0) {
       return {
@@ -188,7 +203,8 @@ export function AdminPlatform({ onBack, user }: AdminPlatformProps) {
     const averageScore = scores.length > 0 
       ? Math.round(scores.reduce((a, b) => a + b, 0) / scores.length)
       : 0;
-    const totalPoints = activities.reduce((sum, a) => sum + (a.points || 0), 0);
+    // Use calculateTotalPoints function instead of accessing non-existent points field
+    const totalPoints = calculateTotalPoints(activities);
     return {
       totalActivities: activities.length,
       averageScore,
@@ -359,7 +375,7 @@ export function AdminPlatform({ onBack, user }: AdminPlatformProps) {
               <tbody className="bg-white divide-y divide-gray-200">
                 {filteredUsers.map((u) => {
                   // Get fresh stats for each user on every render
-                  const userStats = getUserStatsForUser(u.id);
+                  const userStats = getUserStatsForUser(u.id, u.role);
                   const roleColors = {
                     student: 'bg-blue-100 text-blue-700',
                     instructor: 'bg-purple-100 text-purple-700',
@@ -398,7 +414,10 @@ export function AdminPlatform({ onBack, user }: AdminPlatformProps) {
                         {u.cefrLevel || '—'}
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                        {userStats.totalActivities} ({userStats.averageScore}% avg)
+                        {u.role === 'instructor' 
+                          ? `${userStats.totalActivities} ${t('instructor.feedbackGiven').toLowerCase()}`
+                          : `${userStats.totalActivities} (${userStats.averageScore}% avg)`
+                        }
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
                         {new Date(u.createdAt).toLocaleDateString()}
@@ -505,8 +524,19 @@ export function AdminPlatform({ onBack, user }: AdminPlatformProps) {
                 <div>
                   <h5 className="font-semibold text-gray-900 mb-3">Activity Statistics</h5>
                   {(() => {
-                    const userStats = getUserStatsForUser(selectedUser.id);
+                    const userStats = getUserStatsForUser(selectedUser.id, selectedUser.role);
                     const activities = getUserActivities(selectedUser.id);
+                    // For instructors, show only feedback count; for students, show all stats
+                    if (selectedUser.role === 'instructor') {
+                      return (
+                        <div className="grid grid-cols-1 gap-4">
+                          <div className="bg-gray-50 rounded-lg p-4">
+                            <p className="text-sm text-gray-500">{t('instructor.feedbackGiven')}</p>
+                            <p className="text-2xl font-bold text-gray-900">{userStats.totalActivities}</p>
+                          </div>
+                        </div>
+                      );
+                    }
                     return (
                       <div className="grid grid-cols-3 gap-4">
                         <div className="bg-gray-50 rounded-lg p-4">
