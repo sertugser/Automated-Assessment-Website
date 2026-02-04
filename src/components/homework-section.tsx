@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
 import { motion } from 'motion/react';
-import { FileText, Edit, Mic, Headphones, ChevronRight, Calendar } from 'lucide-react';
+import { FileText, Edit, Mic, Headphones, ChevronRight, Calendar, PlayCircle, Volume2 } from 'lucide-react';
 import { getAssignmentsForStudent, getAssignment, getSubmissionsByStudent, type Submission } from '../lib/assignments';
 import { getCurrentUser } from '../lib/auth';
 import { useLanguage } from '../contexts/LanguageContext';
@@ -132,7 +132,7 @@ export function HomeworkSection({ onStartAssignment, initialAssignmentId }: Home
               animate={{ opacity: 1, y: 0 }}
               transition={{ delay: i * 0.05 }}
               onClick={() => {
-                if (!item.reviewed) return;
+                if (!item.submitted && !item.reviewed) return;
                 setExpandedAssignmentId((prev) =>
                   prev === item.assignmentId ? null : item.assignmentId
                 );
@@ -141,7 +141,7 @@ export function HomeworkSection({ onStartAssignment, initialAssignmentId }: Home
                 highlightedAssignmentId === item.assignmentId
                   ? 'border-indigo-400 ring-2 ring-indigo-200 bg-indigo-50/40'
                   : 'border-gray-200 hover:border-indigo-200'
-              } ${item.reviewed ? 'cursor-pointer' : ''}`}
+              } ${(item.submitted || item.reviewed) ? 'cursor-pointer' : ''}`}
             >
               <div className="flex items-center justify-between gap-4">
                 <div className="flex items-center gap-4 flex-1 min-w-0">
@@ -181,9 +181,22 @@ export function HomeworkSection({ onStartAssignment, initialAssignmentId }: Home
                       </button>
                     </>
                   ) : item.submitted ? (
-                    <span className="px-3 py-1.5 bg-green-100 text-green-700 rounded-lg text-sm font-medium">
-                      {t('homework.submitted')}
-                    </span>
+                    <>
+                      <span className="px-3 py-1.5 bg-green-100 text-green-700 rounded-lg text-sm font-medium">
+                        {t('homework.submitted')}
+                      </span>
+                      <button
+                        onClick={() =>
+                          setExpandedAssignmentId((prev) =>
+                            prev === item.assignmentId ? null : item.assignmentId
+                          )
+                        }
+                        onMouseDown={(e) => e.stopPropagation()}
+                        className="px-3 py-1.5 rounded-lg text-sm font-medium bg-green-600 text-white hover:bg-green-700"
+                      >
+                        {expandedAssignmentId === item.assignmentId ? t('homework.hideSubmission') : t('homework.viewSubmission')}
+                      </button>
+                    </>
                   ) : (
                     <button
                       onClick={() =>
@@ -202,25 +215,80 @@ export function HomeworkSection({ onStartAssignment, initialAssignmentId }: Home
                   )}
                 </div>
               </div>
-              {item.reviewed && expandedAssignmentId === item.assignmentId && (
-                <div className="mt-4 border-t border-gray-100 pt-4">
-                  {typeof item.submission?.instructorScore === 'number' && (
-                    <p className="text-sm text-gray-700 mb-2">
-                      <span className="font-semibold text-gray-900">{t('homework.instructorScore')}:</span>{' '}
-                      {item.submission.instructorScore}%
-                    </p>
-                  )}
-                  {item.submission?.instructorFeedback ? (
-                    <p className="text-sm text-gray-700 whitespace-pre-wrap">
-                      {item.submission.instructorFeedback}
-                    </p>
-                  ) : (
-                    <p className="text-sm text-gray-600">{t('homework.noFeedbackYet')}</p>
-                  )}
-                  {item.submission?.reviewedAt && (
-                    <p className="text-xs text-gray-500 mt-2">
-                      {t('homework.reviewedAt')}: {new Date(item.submission.reviewedAt).toLocaleString()}
-                    </p>
+              {(item.submitted || item.reviewed) && expandedAssignmentId === item.assignmentId && (
+                <div className="mt-4 border-t border-gray-100 pt-4 space-y-4">
+                  {/* Student's Submission */}
+                  <div>
+                    <h4 className="text-sm font-semibold text-gray-900 mb-2">{t('homework.yourSubmission')}</h4>
+                    {item.assignment.type === 'writing' && item.submission?.content && (
+                      <div className="bg-gray-50 rounded-lg p-4 border border-gray-200">
+                        <p className="text-sm text-gray-700 whitespace-pre-wrap">{item.submission.content}</p>
+                      </div>
+                    )}
+                    {item.assignment.type === 'speaking' && item.submission?.audioUrl && (
+                      <div className="bg-gray-50 rounded-lg p-4 border border-gray-200">
+                        <audio controls className="w-full">
+                          <source src={item.submission.audioUrl} type="audio/webm" />
+                          <source src={item.submission.audioUrl} type="audio/mpeg" />
+                          Your browser does not support the audio element.
+                        </audio>
+                        {item.submission.ocrText && (
+                          <p className="text-xs text-gray-600 mt-2 italic">{t('homework.transcript')}: {item.submission.ocrText}</p>
+                        )}
+                      </div>
+                    )}
+                    {item.assignment.type === 'listening' && item.submission && (
+                      <div className="bg-gray-50 rounded-lg p-4 border border-gray-200">
+                        <p className="text-sm text-gray-600">{t('homework.listeningCompleted')}</p>
+                        {item.submission.aiScore !== undefined && (
+                          <p className="text-xs text-gray-500 mt-1">
+                            {t('homework.aiScore')}: {item.submission.aiScore}%
+                          </p>
+                        )}
+                      </div>
+                    )}
+                    {item.assignment.type === 'quiz' && item.submission && (
+                      <div className="bg-gray-50 rounded-lg p-4 border border-gray-200">
+                        <p className="text-sm text-gray-600">{t('homework.quizCompleted')}</p>
+                        {item.submission.aiScore !== undefined && (
+                          <p className="text-xs text-gray-500 mt-1">
+                            {t('homework.aiScore')}: {item.submission.aiScore}%
+                          </p>
+                        )}
+                      </div>
+                    )}
+                    {item.submission?.submittedAt && (
+                      <p className="text-xs text-gray-500 mt-2">
+                        {t('homework.submittedAt')}: {new Date(item.submission.submittedAt).toLocaleString()}
+                      </p>
+                    )}
+                  </div>
+
+                  {/* Instructor Feedback (only if reviewed) */}
+                  {item.reviewed && (
+                    <div className="border-t border-gray-200 pt-4">
+                      <h4 className="text-sm font-semibold text-gray-900 mb-3">{t('homework.instructorFeedback')}</h4>
+                      {typeof item.submission?.instructorScore === 'number' ? (
+                        <div className="mb-3">
+                          <p className="text-sm text-gray-700">
+                            <span className="font-semibold text-gray-900">{t('homework.instructorScore')}:</span>{' '}
+                            <span className="font-bold text-emerald-600">{item.submission.instructorScore}%</span>
+                          </p>
+                        </div>
+                      ) : null}
+                      {item.submission?.instructorFeedback ? (
+                        <div className="bg-emerald-50 rounded-lg p-4 border border-emerald-200 mb-2">
+                          <p className="text-sm text-gray-700 whitespace-pre-wrap">{item.submission.instructorFeedback}</p>
+                        </div>
+                      ) : (
+                        <p className="text-sm text-gray-600 mb-2">{t('homework.noFeedbackYet')}</p>
+                      )}
+                      {item.submission?.reviewedAt && (
+                        <p className="text-xs text-gray-500">
+                          {t('homework.reviewedAt')}: {new Date(item.submission.reviewedAt).toLocaleString()}
+                        </p>
+                      )}
+                    </div>
                   )}
                 </div>
               )}

@@ -252,6 +252,7 @@ export function WritingSection({ initialActivityId, assignmentId, onActivitySave
       const submissions = getSubmissionsByStudent(user.id);
       const submission = submissions.find((s) => s.assignmentId === assignmentId);
       if (submission && (submission.instructorFeedback || typeof submission.instructorScore === 'number')) {
+        // Only use instructorScore if it exists, never fallback to AI score
         setInstructorReview({
           score: typeof submission.instructorScore === 'number' ? submission.instructorScore : undefined,
           feedback: submission.instructorFeedback,
@@ -1333,7 +1334,7 @@ export function WritingSection({ initialActivityId, assignmentId, onActivitySave
           </motion.div>
           <div className="flex-1"></div>
 
-          {/* AI Feedback kutusu sol kolona alındı (Tips/Includes ile yer değiştirdi) */}
+          {/* Instructor Feedback - positioned before AI Feedback */}
           {instructorReview && (
             <motion.div
               initial={{ opacity: 0, x: 20 }}
@@ -1341,27 +1342,30 @@ export function WritingSection({ initialActivityId, assignmentId, onActivitySave
               transition={{ delay: 0.15 }}
               className="bg-gradient-to-br from-emerald-50 to-teal-50 rounded-2xl p-6 border-2 border-emerald-200 shadow-lg mb-4"
             >
-              <div className="flex items-center justify-between mb-3">
-                <h3 className="text-xl font-bold text-gray-900">
-                  {t('homework.instructorFeedback')}
-                </h3>
-                {typeof instructorReview.score === 'number' && (
-                  <div className="text-2xl font-bold text-emerald-600">
-                    {instructorReview.score}%
-                  </div>
-                )}
-              </div>
+              <h3 className="text-xl font-bold text-gray-900 mb-3">
+                {t('homework.instructorFeedback')}
+              </h3>
+              {typeof instructorReview.score === 'number' && (
+                <div className="mb-3">
+                  <p className="text-sm text-gray-700">
+                    <span className="font-semibold text-gray-900">{t('homework.instructorScore')}:</span>{' '}
+                    <span className="font-bold text-emerald-600 text-lg">{instructorReview.score}%</span>
+                  </p>
+                </div>
+              )}
               {instructorReview.feedback ? (
-                <p className="text-sm text-gray-700 whitespace-pre-wrap">
-                  {instructorReview.feedback}
-                </p>
+                <div className="bg-white rounded-lg p-4 border border-emerald-200 mb-2">
+                  <p className="text-sm text-gray-700 whitespace-pre-wrap">
+                    {instructorReview.feedback}
+                  </p>
+                </div>
               ) : (
-                <p className="text-sm text-gray-600">
+                <p className="text-sm text-gray-600 mb-2">
                   {t('homework.noFeedbackYet')}
                 </p>
               )}
               {instructorReview.reviewedAt && (
-                <p className="text-xs text-gray-500 mt-2">
+                <p className="text-xs text-gray-500">
                   {t('homework.reviewedAt')}: {new Date(instructorReview.reviewedAt).toLocaleString()}
                 </p>
               )}

@@ -1316,7 +1316,8 @@ function SubmissionReviewModal({
   t: (k: string) => string;
 }) {
   const ai = submission.aiFeedback;
-  const [score, setScore] = useState(submission.instructorScore ?? submission.aiScore ?? 0);
+  // Only use instructorScore if it exists, don't fallback to AI score
+  const [score, setScore] = useState(typeof submission.instructorScore === 'number' ? submission.instructorScore : 0);
   const [feedback, setFeedback] = useState(submission.instructorFeedback ?? '');
   const [strengths, setStrengths] = useState(ai?.strengths?.join('\n') ?? '');
   const [improvements, setImprovements] = useState(ai?.improvements?.join('\n') ?? '');
@@ -1352,6 +1353,11 @@ function SubmissionReviewModal({
         {submission.aiScore != null && (
           <p className="text-sm font-medium text-indigo-600 mb-2">
             {t('instructor.aiScore')}: {submission.aiScore}%
+          </p>
+        )}
+        {typeof submission.instructorScore === 'number' && (
+          <p className="text-sm font-medium text-emerald-600 mb-2">
+            {t('instructor.currentInstructorScore')}: {submission.instructorScore}%
           </p>
         )}
 
