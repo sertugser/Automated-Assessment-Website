@@ -91,6 +91,7 @@ export function AssessmentPlatform({ onBack, user }: AssessmentPlatformProps) {
   const [loadingCommonMistakes, setLoadingCommonMistakes] = useState(true);
   const [initialSpeakingActivityId, setInitialSpeakingActivityId] = useState<string | null>(null);
   const [initialSpeakingAssignmentId, setInitialSpeakingAssignmentId] = useState<string | null>(null);
+  const [initialListeningActivityId, setInitialListeningActivityId] = useState<string | null>(null);
   const [initialListeningAssignmentId, setInitialListeningAssignmentId] = useState<string | null>(null);
   const [initialWritingActivityId, setInitialWritingActivityId] = useState<string | null>(null);
   const [initialWritingAssignmentId, setInitialWritingAssignmentId] = useState<string | null>(null);
@@ -616,13 +617,16 @@ export function AssessmentPlatform({ onBack, user }: AssessmentPlatformProps) {
     setSelectedCourse('');
   };
 
-  const handleOpenActivityFromDashboard = (activityId: string, type: 'speaking' | 'writing' | 'quiz') => {
+  const handleOpenActivityFromDashboard = (activityId: string, type: 'speaking' | 'writing' | 'quiz' | 'listening') => {
     if (type === 'speaking') {
       setInitialSpeakingActivityId(activityId);
       navigateToScreen('speaking');
     } else if (type === 'writing') {
       setInitialWritingActivityId(activityId);
       navigateToScreen('writing');
+    } else if (type === 'listening') {
+      setInitialListeningActivityId(activityId);
+      navigateToScreen('listening');
     } else if (type === 'quiz') {
       const activities = getActivities();
       const activity = activities.find(a => a.id === activityId && a.type === 'quiz');
@@ -1020,6 +1024,7 @@ export function AssessmentPlatform({ onBack, user }: AssessmentPlatformProps) {
             cefrLevel={currentUser?.cefrLevel ?? null}
             onActivitySaved={handleActivitySaved}
             assignmentId={initialListeningAssignmentId}
+            initialActivityId={initialListeningActivityId}
           />
         )}
         {currentScreen === 'writing' && (

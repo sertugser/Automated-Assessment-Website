@@ -1,12 +1,12 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { motion } from 'motion/react';
-import { Headphones, PlayCircle, PauseCircle, RotateCcw, CheckCircle2, BookOpen, Sparkles, ArrowLeft, List } from 'lucide-react';
+import { Headphones, PlayCircle, PauseCircle, RotateCcw, CheckCircle2, BookOpen, Sparkles, ArrowLeft, List, XCircle, CheckCircle } from 'lucide-react';
 import { useLanguage } from '../contexts/LanguageContext';
 import { generateListeningQuestions } from '../lib/ai-services';
 import type { ListeningQuestion } from '../lib/ai-services';
 import { createSubmission } from '../lib/assignments';
 import { getCurrentUser } from '../lib/auth';
-import { saveActivity } from '../lib/user-progress';
+import { saveActivity, getActivitiesByType } from '../lib/user-progress';
 import type { CEFRLevel } from '../lib/auth';
 
 type Level = CEFRLevel;
@@ -202,9 +202,10 @@ interface ListeningSectionProps {
   cefrLevel?: CEFRLevel | null;
   onActivitySaved?: () => void;
   assignmentId?: string | null;
+  initialActivityId?: string | null;
 }
 
-export function ListeningSection({ cefrLevel, onActivitySaved, assignmentId }: ListeningSectionProps) {
+export function ListeningSection({ cefrLevel, onActivitySaved, assignmentId, initialActivityId }: ListeningSectionProps) {
   const { t } = useLanguage();
   const [isPlaying, setIsPlaying] = useState(false);
   const [selectedLevel, setSelectedLevel] = useState<Level>(cefrLevel && LEVEL_ORDER.includes(cefrLevel) ? cefrLevel : 'B1');
@@ -235,6 +236,8 @@ export function ListeningSection({ cefrLevel, onActivitySaved, assignmentId }: L
   const playbackIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const playbackStartTimeRef = useRef(0);
   const playbackSentenceIndexRef = useRef(0);
+  const isRestoringRef = useRef(false);
+  const restoredExerciseIdRef = useRef<string | null>(null);
 
   const clearPlaybackInterval = () => {
     if (playbackIntervalRef.current) {
@@ -244,10 +247,52 @@ export function ListeningSection({ cefrLevel, onActivitySaved, assignmentId }: L
   };
 
   useEffect(() => {
+    if (isRestoringRef.current) return;
     setSelectedExerciseId(null);
     setAiQuestions(null);
     setQuestionsError(null);
   }, [selectedLevel]);
+
+  // Load initial activity from Recent Activity
+  useEffect(() => {
+    if (initialActivityId) {
+      isRestoringRef.current = true;
+      const activities = getActivitiesByType('listening');
+      const activity = activities.find((a) => a.id === initialActivityId);
+      if (activity) {
+        // Restore the listening exercise state
+        setQuestionsError(null);
+        if (activity.listeningQuestions) {
+          setAiQuestions(activity.listeningQuestions);
+        }
+        if (activity.listeningUserAnswers) {
+          setAnswers(activity.listeningUserAnswers);
+        }
+        setSubmitted(true);
+        
+        // Try to find and select the exercise based on the title
+        const exerciseTitle = activity.courseTitle;
+        if (exerciseTitle) {
+          const allExercises = Object.values(EXERCISES_BY_LEVEL).flat();
+          const foundExercise = allExercises.find(ex => ex.title === exerciseTitle);
+          if (foundExercise) {
+            // Set level and exercise
+            const exerciseLevel = Object.entries(EXERCISES_BY_LEVEL).find(([_, exercises]) => 
+              exercises.some(e => e.id === foundExercise.id)
+            )?.[0] as Level;
+            if (exerciseLevel) {
+              restoredExerciseIdRef.current = foundExercise.id;
+              setSelectedLevel(exerciseLevel);
+              setSelectedExerciseId(foundExercise.id);
+            }
+          }
+        }
+      }
+      setTimeout(() => {
+        isRestoringRef.current = false;
+      }, 0);
+    }
+  }, [initialActivityId]);
 
   useEffect(() => {
     if (typeof window === 'undefined' || !window.speechSynthesis) return;
@@ -261,6 +306,8 @@ export function ListeningSection({ cefrLevel, onActivitySaved, assignmentId }: L
 
   // Reset playback and answers whenever level or exercise changes (so previous exercise answers never persist)
   useEffect(() => {
+    if (isRestoringRef.current) return;
+    if (restoredExerciseIdRef.current && restoredExerciseIdRef.current === selectedExerciseId) return;
     setCurrentSentenceIndex(0);
     setCurrentPlaybackTime(0);
     setAnswers({});
@@ -271,6 +318,11 @@ export function ListeningSection({ cefrLevel, onActivitySaved, assignmentId }: L
   }, [selectedLevel, selectedExerciseId]);
 
   useEffect(() => {
+    if (isRestoringRef.current) return;
+    if (restoredExerciseIdRef.current && restoredExerciseIdRef.current === exercise?.id && submitted && (aiQuestions?.length ?? 0) > 0) {
+      return;
+    }
+    restoredExerciseIdRef.current = null;
     if (!exercise) {
       setAiQuestions(null);
       setQuestionsError(null);
@@ -308,8 +360,13 @@ export function ListeningSection({ cefrLevel, onActivitySaved, assignmentId }: L
     if (exerciseIdRef.current !== nextId) {
       exerciseIdRef.current = nextId;
       if (nextId != null) {
-        setAnswers({});
-        setSubmitted(false);
+        if (!isRestoringRef.current && restoredExerciseIdRef.current !== nextId) {
+          setAnswers({});
+          setSubmitted(false);
+        }
+      }
+      if (restoredExerciseIdRef.current && restoredExerciseIdRef.current !== nextId) {
+        restoredExerciseIdRef.current = null;
       }
     }
   }, [exercise?.id]);
@@ -714,6 +771,103 @@ export function ListeningSection({ cefrLevel, onActivitySaved, assignmentId }: L
               </button>
             </div>
           </motion.div>
+
+          {/* Results & Analysis - Only show after submission */}
+          {submitted && (
+            <motion.div
+              initial={{ opacity: 0, y: 16 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ delay: 0.15 }}
+              className="bg-gradient-to-br from-indigo-50 to-purple-50 rounded-2xl p-6 border-2 border-indigo-200 shadow-lg"
+            >
+              <div className="flex items-center justify-between mb-4">
+                <h3 className="text-xl font-bold text-gray-900 flex items-center gap-2">
+                  <Sparkles className="w-5 h-5 text-indigo-600" />
+                  Results & Analysis
+                </h3>
+                <div className="text-3xl font-bold text-indigo-600">
+                  {score.total > 0 ? Math.round((score.correctCount / score.total) * 100) : 0}%
+                </div>
+              </div>
+
+              {/* Summary */}
+              <div className="mb-4">
+                <div className="flex items-center justify-between mb-2">
+                  <span className="font-semibold text-gray-700">Summary</span>
+                  <span className="font-bold text-gray-900">{score.correctCount}/{score.total} Correct</span>
+                </div>
+                <div className="bg-white border border-gray-200 rounded-lg p-3">
+                  <div className="text-sm text-gray-700">
+                    You answered {score.correctCount} out of {score.total} questions correctly.
+                    {score.correctCount === score.total && " Perfect score! 🎉"}
+                    {score.correctCount < score.total && score.correctCount >= score.total * 0.7 && " Great job! Keep practicing."}
+                    {score.correctCount < score.total * 0.7 && " Keep practicing to improve your score."}
+                  </div>
+                </div>
+              </div>
+
+              {/* Wrong Answers */}
+              {questions.some(q => answers[q.id] !== q.correct) && (
+                <div className="mb-4">
+                  <div className="flex items-center justify-between mb-2">
+                    <span className="font-semibold text-gray-700 flex items-center gap-2">
+                      <XCircle className="w-4 h-4 text-red-600" />
+                      Incorrect Answers
+                    </span>
+                    <span className="text-xs text-gray-500">
+                      {questions.filter(q => answers[q.id] !== q.correct).length} mistake(s)
+                    </span>
+                  </div>
+                  <div className="space-y-3">
+                    {questions.map((q, idx) => {
+                      if (answers[q.id] === q.correct) return null;
+                      return (
+                        <div key={q.id} className="bg-red-50 border border-red-200 rounded-lg p-3">
+                          <div className="font-semibold text-red-700 text-sm mb-2">Question {idx + 1}</div>
+                          <div className="text-sm text-gray-700 mb-2">{q.question}</div>
+                          <div className="space-y-1">
+                            <div className="text-sm">
+                              <span className="font-semibold text-red-600">Your answer:</span>
+                              <span className="text-gray-700 ml-2">{answers[q.id] || 'Not answered'}</span>
+                            </div>
+                            <div className="text-sm">
+                              <span className="font-semibold text-green-600">Correct answer:</span>
+                              <span className="text-gray-700 ml-2">{q.correct}</span>
+                            </div>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+
+              {/* Correct Answers */}
+              {questions.some(q => answers[q.id] === q.correct) && (
+                <div>
+                  <div className="flex items-center justify-between mb-2">
+                    <span className="font-semibold text-gray-700 flex items-center gap-2">
+                      <CheckCircle className="w-4 h-4 text-green-600" />
+                      Correct Answers
+                    </span>
+                    <span className="text-xs text-gray-500">
+                      {questions.filter(q => answers[q.id] === q.correct).length} correct
+                    </span>
+                  </div>
+                  <div className="bg-green-50 border border-green-200 rounded-lg p-3">
+                    <div className="text-sm text-gray-700">
+                      {questions.filter(q => answers[q.id] === q.correct).map((q, idx) => (
+                        <div key={q.id} className="flex items-start gap-2 mb-1">
+                          <CheckCircle2 className="w-4 h-4 text-green-600 mt-0.5 flex-shrink-0" />
+                          <span>Question {questions.indexOf(q) + 1}</span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+              )}
+            </motion.div>
+          )}
         </div>
 
         <div className="space-y-6">

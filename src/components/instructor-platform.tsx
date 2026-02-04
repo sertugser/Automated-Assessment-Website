@@ -118,11 +118,21 @@ export function InstructorPlatform({ onBack, user }: InstructorPlatformProps) {
     : null;
 
   const classAverageScore = (() => {
-    const scores = submissions
-      .map(s => s.instructorScore ?? s.aiScore ?? s.aiFeedback?.overallScore ?? 0)
-      .filter(score => score > 0);
-    if (scores.length === 0) return 0;
-    return Math.round(scores.reduce((sum, score) => sum + score, 0) / scores.length);
+    // Sadece review edilmiş submission'ların değil, tüm öğrencilerin ortalama skorunu hesapla
+    if (students.length === 0) return 0;
+    
+    const studentAverages = students.map(student => {
+      const studentSubmissions = submissions.filter(s => s.studentId === student.studentId);
+      const scores = studentSubmissions
+        .map(s => s.instructorScore ?? s.aiScore ?? s.aiFeedback?.overallScore ?? 0)
+        .filter(score => score > 0);
+      
+      if (scores.length === 0) return 0;
+      return scores.reduce((sum, score) => sum + score, 0) / scores.length;
+    });
+    
+    const totalAverage = studentAverages.reduce((sum, avg) => sum + avg, 0) / students.length;
+    return Math.round(totalAverage);
   })();
 
   const handleCreateAssignment = (e: React.FormEvent) => {
